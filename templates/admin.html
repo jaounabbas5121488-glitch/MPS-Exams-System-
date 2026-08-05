@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel – MPS Exams System{% endblock %}
+{% block main_class %}max-w-6xl mx-auto px-4 py-8{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-gray-800">Admin Panel</h1>
+  <p class="text-gray-500 text-sm mt-1">Manage teacher registrations, school schedule, and official check-in time</p>
+</div>
+
+{% if settings_saved %}
+<div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">
+  ✅ Official check-in time updated successfully.
+</div>
+{% endif %}
+
+<!-- School Status Card -->
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h2 class="text-lg font-semibold text-gray-800">📅 Today's School Status</h2>
+      <p class="text-sm text-gray-500 mt-1">Date: <span class="font-medium text-gray-700">{{ today }}</span></p>
+      <div class="mt-2">
+        {% if is_open %}
+        <span class="inline-flex items-center gap-1.5 bg-green-100 text-green-700 text-sm font-semibold px-3 py-1 rounded-full">
+          <span class="w-2 h-2 bg-green-500 rounded-full"></span> School is OPEN
+        </span>
+        {% else %}
+        <span class="inline-flex items-center gap-1.5 bg-red-100 text-red-700 text-sm font-semibold px-3 py-1 rounded-full">
+          <span class="w-2 h-2 bg-red-500 rounded-full"></span> School is CLOSED
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    <form method="post" action="/admin/calendar" class="flex gap-3">
+      <button type="submit" name="is_open" value="1"
+        class="bg-green-500 hover:bg-green-600 text-white text-sm font-semibold px-5 py-2 rounded-lg transition shadow">
+        Mark Open
+      </button>
+      <button type="submit" name="is_open" value="0"
+        class="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold px-5 py-2 rounded-lg transition shadow">
+        Mark Closed
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Official Check-in Time -->
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-1">⏰ Official School Check-in Time</h2>
+  <p class="text-sm text-gray-500 mb-5">
+  Teachers checking in after this time will be marked <span class="font-semibold text-red-600">Late</span>.
+  Current official time: <span class="font-semibold text-blue-700">{{ official_check_in_display }}</span>
+  </p>
+
+  <form method="post" action="/admin/settings/check-in-time" class="flex flex-col sm:flex-row sm:items-end gap-4">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Set Check-in Time</label>
+      <input
+        type="time"
+        name="official_check_in_time"
+        value="{{ official_check_in_time }}"
+        required
+        class="border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+    </div>
+    <button type="submit"
+      class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-6 py-2.5 rounded-lg transition shadow">
+      Update Time
+    </button>
+  </form>
+</div>
+
+<!-- Pending Approvals -->
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">⏳ Pending Teacher Registrations</h2>
+  {% if pending %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-gray-50 text-gray-600 text-left">
+          <th class="px-4 py-3 rounded-l-lg font-semibold">Name</th>
+          <th class="px-4 py-3 font-semibold">Email</th>
+          <th class="px-4 py-3 font-semibold">Qualifications</th>
+          <th class="px-4 py-3 font-semibold">Experience</th>
+          <th class="px-4 py-3 rounded-r-lg font-semibold text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for teacher in pending %}
+        <tr class="hover:bg-gray-50 transition">
+          <td class="px-4 py-3">
+            <div class="font-medium text-gray-800">{{ teacher.full_name }}</div>
+            <div class="text-xs text-gray-400">Father: {{ teacher.father_name }}</div>
+          </td>
+          <td class="px-4 py-3 text-gray-600">{{ teacher.email }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ teacher.qualifications }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ teacher.experience }}</td>
+          <td class="px-4 py-3 text-right">
+            <div class="flex justify-end gap-2">
+              <form method="post" action="/admin/approve/{{ teacher.id }}">
+                <button type="submit"
+                  class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition">
+                  Approve
+                </button>
+              </form>
+              <form method="post" action="/admin/reject/{{ teacher.id }}">
+                <button type="submit"
+                  class="bg-gray-200 hover:bg-red-100 text-gray-700 hover:text-red-600 text-xs font-semibold px-4 py-1.5 rounded-lg transition">
+                  Reject
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-10 text-gray-400">
+    <span class="text-4xl block mb-2">🎉</span>
+    No pending registrations
+  </div>
+  {% endif %}
+</div>
+
+<!-- Approved Teachers -->
+<div class="bg-white rounded-2xl shadow p-6">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">✅ Approved Teachers</h2>
+  {% if approved %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-gray-50 text-gray-600 text-left">
+          <th class="px-4 py-3 rounded-l-lg font-semibold">Name</th>
+          <th class="px-4 py-3 font-semibold">Email</th>
+          <th class="px-4 py-3 font-semibold">Qualifications</th>
+          <th class="px-4 py-3 rounded-r-lg font-semibold">Experience</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for teacher in approved %}
+        <tr class="hover:bg-gray-50 transition">
+          <td class="px-4 py-3">
+            <div class="font-medium text-gray-800">{{ teacher.full_name }}</div>
+            <div class="text-xs text-gray-400">Father: {{ teacher.father_name }}</div>
+          </td>
+          <td class="px-4 py-3 text-gray-600">{{ teacher.email }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ teacher.qualifications }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ teacher.experience }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-10 text-gray-400">
+    <span class="text-4xl block mb-2">👩‍🏫</span>
+    No approved teachers yet
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
