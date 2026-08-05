@@ -54,10 +54,18 @@ def get_official_check_in_time(conn) -> str:
     return get_setting(conn, "official_check_in_time", DEFAULT_CHECK_IN_TIME)
 
 
-def is_school_open(conn, day: str) -> bool:
+def is_school_open(conn, day_str: str) -> bool:
+    # Default academic calendar rule: June, July, August are Summer Vacations (closed)
+    try:
+        d = date.fromisoformat(day_str)
+        if d.month in [6, 7, 8]:
+            return False
+    except ValueError:
+        pass
+
     row = conn.execute(
         "SELECT is_open FROM school_calendar WHERE date = ?",
-        (day,),
+        (day_str,),
     ).fetchone()
     if row is None:
         return True
@@ -65,11 +73,7 @@ def is_school_open(conn, day: str) -> bool:
 
 
 def get_school_open_status(conn, day: str) -> int:
-    row = conn.execute(
-        "SELECT is_open FROM school_calendar WHERE date = ?",
-        (day,),
-    ).fetchone()
-    return row["is_open"] if row else 1
+    return 1 if is_school_open(conn, day) else 0
 
 
 def determine_punctuality(check_in: datetime, official_hhmm: str) -> str:
@@ -193,6 +197,9 @@ def init_db():
         )
     """)
 
+    # Ensure is_active column exists for teacher deactivation / removal when they leave school
+    _add_column_if_missing(cur, "users", "is_active", "INTEGER DEFAULT 1")
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -307,8 +314,8 @@ def init_db():
         cur.execute(
             """
             INSERT INTO users
-              (email, password, full_name, father_name, qualifications, experience, role, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              (email, password, full_name, father_name, qualifications, experience, role, status, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
             """,
             (
                 "admin@mps.com",
