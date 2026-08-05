@@ -2,7 +2,7 @@ from datetime import date
 from io import BytesIO
 
 from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from openpyxl import Workbook
@@ -19,6 +19,10 @@ from database import (
     get_teacher_attendance,
     record_check_in,
     get_progress_stats,
+    get_monthly_trend,
+    get_all_teachers_average_trend,
+    bulk_set_school_days,
+    get_school_calendar_events,
     set_setting,
 )
 
@@ -50,6 +54,18 @@ def require_admin(request: Request):
     return user
 
 
+def shift_month(year: int, month: int, delta: int):
+    m = month + delta
+    y = year
+    while m > 12:
+        m -= 12
+        y += 1
+    while m < 1:
+        m += 12
+        y -= 1
+    return y, m
+
+
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
     return RedirectResponse(url="/login")
@@ -78,6 +94,8 @@ def login_post(request: Request, email: str = Form(...), password: str = Form(..
         return templates.TemplateResponse("login.html", {"request": request, "error": "Your account is pending admin approval."})
     if user["status"] == "rejected":
         return templates.TemplateResponse("login.html", {"request": request, "error": "Your account has been rejected."})
+    if user["is_active"] == 0:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Your account has been deactivated. Contact the admin."})
 
     request.session["user"] = {
         "id": user["id"],
@@ -144,11 +162,37 @@ def admin_panel(request: Request):
 
     conn = get_db()
     pending = conn.execute("SELECT * FROM users WHERE status = 'pending'").fetchall()
-    approved = conn.execute("SELECT * FROM users WHERE role = 'teacher' AND status = 'approved'").fetchall()
+    approved_rows = conn.execute(
+        "SELECT * FROM users WHERE role = 'teacher' AND status = 'approved' AND is_active = 1 ORDER BY full_name"
+    ).fetchall()
+
     today = date.today().isoformat()
+    school_open_today = is_school_open(conn, today)
+
+    # Build today's live attendance status/time for every approved teacher
+    approved = []
+    for row in approved_rows:
+        t = dict(row)
+        if not school_open_today:
+            t["today_status"] = "holiday"
+            t["today_check_in_time"] = None
+        else:
+            attendance = get_teacher_attendance(conn, row["email"], today)
+            if attendance:
+                t["today_status"] = "late" if attendance["punctuality"] == "late" else "present"
+                t["today_check_in_time"] = attendance["check_in_time"]
+            else:
+                t["today_status"] = "absent"
+                t["today_check_in_time"] = None
+        approved.append(t)
+
     is_open = get_school_open_status(conn, today)
     official_check_in_time = get_official_check_in_time(conn)
     official_check_in_display = format_time_display(official_check_in_time)
+
+    # Same-style progress graph as teacher's own progress page, averaged across all teachers
+    chart_months, chart_values = get_all_teachers_average_trend(conn, months=6)
+
     conn.close()
 
     return templates.TemplateResponse("admin.html", {
@@ -161,6 +205,9 @@ def admin_panel(request: Request):
         "official_check_in_display": official_check_in_display,
         "user": user,
         "settings_saved": request.query_params.get("settings_saved"),
+        "calendar_saved": request.query_params.get("calendar_saved"),
+        "chart_months": chart_months,
+        "chart_values": chart_values,
     })
 
 
@@ -183,7 +230,7 @@ def approve_teacher(teacher_id: int, request: Request):
     if not user or user.get("role") != "admin":
         return RedirectResponse(url="/login", status_code=303)
     conn = get_db()
-    conn.execute("UPDATE users SET status = 'approved' WHERE id = ?", (teacher_id,))
+    conn.execute("UPDATE users SET status = 'approved', is_active = 1 WHERE id = ?", (teacher_id,))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)
@@ -201,8 +248,26 @@ def reject_teacher(teacher_id: int, request: Request):
     return RedirectResponse(url="/admin", status_code=303)
 
 
+@app.post("/admin/remove-teacher/{teacher_id}")
+def remove_teacher(teacher_id: int, request: Request):
+    """
+    Used when a teacher leaves the school. We don't delete their history
+    (attendance / marks stay intact for records), we just deactivate them:
+    they disappear from the active-teachers list and can no longer log in.
+    """
+    user = current_user(request)
+    if not user or user.get("role") != "admin":
+        return RedirectResponse(url="/login", status_code=303)
+    conn = get_db()
+    conn.execute("UPDATE users SET is_active = 0 WHERE id = ?", (teacher_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
 @app.post("/admin/calendar")
 def set_calendar(request: Request, is_open: int = Form(...)):
+    """Quick single-day toggle for TODAY only (the small card at the top)."""
     user = current_user(request)
     if not user or user.get("role") != "admin":
         return RedirectResponse(url="/login", status_code=303)
@@ -215,6 +280,79 @@ def set_calendar(request: Request, is_open: int = Form(...)):
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.get("/admin/calendar/school-days")
+def get_calendar_days(request: Request):
+    """Returns saved open/closed overrides so FullCalendar can render them as colored days."""
+    user = current_user(request)
+    if not user or user.get("role") != "admin":
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    conn = get_db()
+    events = get_school_calendar_events(conn)
+    conn.close()
+    return JSONResponse(events)
+
+
+@app.post("/admin/calendar/school-days")
+async def save_calendar_days(request: Request):
+    """
+    Bulk save from the full academic calendar. Accepts:
+    { "dates": { "2026-09-05": true, "2026-09-06": false, ... } }
+    Supports single day, a whole dragged week, or a full vacation range —
+    the frontend just sends every changed date in one request.
+    """
+    user = current_user(request)
+    if not user or user.get("role") != "admin":
+        return JSONResponse({"success": False, "error": "unauthorized"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"success": False, "error": "invalid json"}, status_code=400)
+
+    dates = body.get("dates")
+    if not isinstance(dates, dict):
+        return JSONResponse({"success": False, "error": "invalid dates payload"}, status_code=400)
+
+    conn = get_db()
+    bulk_set_school_days(conn, dates)
+    conn.close()
+    return JSONResponse({"success": True, "count": len(dates)})
+
+
+@app.get("/admin/teacher/{teacher_id}/reports", response_class=HTMLResponse)
+def admin_teacher_reports(teacher_id: int, request: Request, year: int | None = None, month: int | None = None):
+    """Same progress-report graphs the teacher sees, viewable here by admin."""
+    user = current_user(request)
+    if not user or user.get("role") != "admin":
+        return RedirectResponse(url="/login", status_code=303)
+
+    conn = get_db()
+    teacher = conn.execute("SELECT * FROM users WHERE id = ? AND role = 'teacher'", (teacher_id,)).fetchone()
+    if not teacher:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Teacher not found")
+
+    stats = get_progress_stats(conn, teacher["email"], year, month)
+    trend_labels, trend_values = get_monthly_trend(conn, teacher["email"], months=6)
+    conn.close()
+
+    prev_year, prev_month = shift_month(stats["year"], stats["month"], -1)
+    next_year, next_month = shift_month(stats["year"], stats["month"], 1)
+
+    return templates.TemplateResponse("admin_teacher_report.html", {
+        "request": request,
+        "user": user,
+        "teacher": teacher,
+        "stats": stats,
+        "trend_labels": trend_labels,
+        "trend_values": trend_values,
+        "prev_year": prev_year,
+        "prev_month": prev_month,
+        "next_year": next_year,
+        "next_month": next_month,
+    })
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -325,7 +463,7 @@ def test_marks(
 
     if user.get("role") == "admin":
         approved_teachers = conn.execute(
-            "SELECT email, full_name FROM users WHERE role = 'teacher' AND status = 'approved' ORDER BY full_name"
+            "SELECT email, full_name FROM users WHERE role = 'teacher' AND status = 'approved' AND is_active = 1 ORDER BY full_name"
         ).fetchall()
         if teacher_email:
             selected_teacher_email = teacher_email.strip().lower()

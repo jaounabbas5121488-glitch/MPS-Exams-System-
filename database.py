@@ -55,14 +55,13 @@ def get_official_check_in_time(conn) -> str:
 
 
 def is_school_open(conn, day_str: str) -> bool:
-    # Default academic calendar rule: June, July, August are Summer Vacations (closed)
-    try:
-        d = date.fromisoformat(day_str)
-        if d.month in [6, 7, 8]:
-            return False
-    except ValueError:
-        pass
-
+    """
+    Fully calendar-driven now: a day is OPEN unless the admin has explicitly
+    marked it CLOSED (is_open = 0) in school_calendar via the admin calendar tool.
+    There is no more hardcoded "summer months always closed" rule -- admin has
+    full flexibility to mark winter break, summer break, or any custom day off
+    directly from the calendar UI.
+    """
     row = conn.execute(
         "SELECT is_open FROM school_calendar WHERE date = ?",
         (day_str,),
@@ -74,6 +73,44 @@ def is_school_open(conn, day_str: str) -> bool:
 
 def get_school_open_status(conn, day: str) -> int:
     return 1 if is_school_open(conn, day) else 0
+
+
+def bulk_set_school_days(conn, dates: dict):
+    """
+    dates: { "2026-09-05": True, "2026-09-06": False, ... }
+    Used by the admin calendar (click / drag-select multiple days at once,
+    e.g. a full week, or a whole vacation range).
+    """
+    for day_str, is_open in dates.items():
+        try:
+            date.fromisoformat(day_str)  # validate format, skip junk
+        except (ValueError, TypeError):
+            continue
+        conn.execute(
+            """
+            INSERT INTO school_calendar (date, is_open)
+            VALUES (?, ?)
+            ON CONFLICT(date) DO UPDATE SET is_open = excluded.is_open
+            """,
+            (day_str, 1 if is_open else 0),
+        )
+    conn.commit()
+
+
+def get_school_calendar_events(conn):
+    """
+    Returns saved calendar overrides formatted for FullCalendar background events.
+    """
+    rows = conn.execute("SELECT date, is_open FROM school_calendar ORDER BY date").fetchall()
+    events = []
+    for row in rows:
+        events.append({
+            "start": row["date"],
+            "display": "background",
+            "color": "#10b981" if row["is_open"] else "#334155",
+            "title": "Open" if row["is_open"] else "Off",
+        })
+    return events
 
 
 def determine_punctuality(check_in: datetime, official_hhmm: str) -> str:
@@ -177,6 +214,58 @@ def get_progress_stats(conn, teacher_email: str, year: int | None = None, month:
         "official_check_in_time": get_official_check_in_time(conn),
         "official_check_in_display": format_time_display(get_official_check_in_time(conn)),
     }
+
+
+def get_monthly_trend(conn, teacher_email: str, months: int = 6):
+    """
+    Last N months (including current) attendance-rate trend for ONE teacher.
+    Used to draw the same progress-report style graph on the admin panel.
+    """
+    today = date.today()
+    seq = []
+    y, m = today.year, today.month
+    for i in range(months - 1, -1, -1):
+        mm = m - i
+        yy = y
+        while mm <= 0:
+            mm += 12
+            yy -= 1
+        seq.append((yy, mm))
+
+    labels, rates = [], []
+    for yy, mm in seq:
+        stats = get_progress_stats(conn, teacher_email, yy, mm)
+        labels.append(stats["month_name"])
+        rates.append(stats["attendance_rate"])
+    return labels, rates
+
+
+def get_all_teachers_average_trend(conn, months: int = 6):
+    """
+    Average monthly attendance-rate trend across ALL active approved teachers,
+    for the overview graph shown directly on the admin dashboard.
+    """
+    teachers = conn.execute(
+        "SELECT email FROM users WHERE role = 'teacher' AND status = 'approved' AND is_active = 1"
+    ).fetchall()
+
+    if not teachers:
+        return [], []
+
+    labels = None
+    sums = None
+    count = 0
+    for t in teachers:
+        t_labels, t_rates = get_monthly_trend(conn, t["email"], months)
+        if labels is None:
+            labels = t_labels
+            sums = [0.0] * len(t_rates)
+        for i, v in enumerate(t_rates):
+            sums[i] += v
+        count += 1
+
+    averages = [round(s / count, 1) if count else 0 for s in sums]
+    return labels, averages
 
 
 def init_db():
