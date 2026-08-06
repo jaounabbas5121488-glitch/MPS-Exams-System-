@@ -95,7 +95,7 @@
 
   <div class="flex flex-wrap items-center gap-3 mb-5">
     <span class="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold px-4 py-2 rounded-xl">
-      📊 Total Session Open Days: <span class="font-mono text-sm">{{ total_session_open_days }}</span>
+      📊 Total Session Open Days: <span id="total-open-days-value" class="font-mono text-sm">{{ total_session_open_days }}</span>
     </span>
     <span id="month-open-count" class="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold px-4 py-2 rounded-xl">
       This month: 0 open days
@@ -284,6 +284,17 @@ document.addEventListener('DOMContentLoaded', function () {
       if (isOpen) count++;
       cursor.setDate(cursor.getDate() + 1);
     }
+    function recomputeTotalCount() {
+    const allDates = new Set([...savedOpenDates, ...Object.keys(changedDates)]);
+    let total = 0;
+    allDates.forEach(function (ds) {
+      const isOpen = (ds in changedDates) ? changedDates[ds] : savedOpenDates.has(ds);
+      if (isOpen) total++;
+    });
+    const el = document.getElementById('total-open-days-value');
+    if (el) el.innerText = total;
+  }
+
     document.getElementById('month-open-count').innerText = 'This month: ' + count + ' open days';
   }
 
@@ -338,6 +349,7 @@ document.addEventListener('DOMContentLoaded', function () {
     currentViewStart = calendar.view.currentStart;
     currentViewEnd = calendar.view.currentEnd;
     recomputeMonthCount();
+    recomputeTotalCount();
   }
 
   function markDayOpen(dateStr, isOpen) {
@@ -355,6 +367,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function updateCounter() {
     document.getElementById('selected-count').innerText = Object.keys(changedDates).length + ' dates changed';
     recomputeMonthCount();
+    recomputeTotalCount();
   }
 
   document.getElementById('save-calendar-btn').addEventListener('click', function () {
