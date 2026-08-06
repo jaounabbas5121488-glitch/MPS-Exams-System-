@@ -2,9 +2,11 @@ import hashlib
 import sqlite3
 from calendar import monthrange
 from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
 
 DB_PATH = "mps_exams.db"
 DEFAULT_CHECK_IN_TIME = "08:30"
+PKT = ZoneInfo("Asia/Karachi")  # Pakistan Standard Time - fixes wrong attendance time
 
 
 def get_db():
@@ -56,11 +58,8 @@ def get_official_check_in_time(conn) -> str:
 
 def is_school_open(conn, day_str: str) -> bool:
     """
-    Fully calendar-driven now: a day is OPEN unless the admin has explicitly
+    Fully calendar-driven: a day is OPEN unless the admin has explicitly
     marked it CLOSED (is_open = 0) in school_calendar via the admin calendar tool.
-    There is no more hardcoded "summer months always closed" rule -- admin has
-    full flexibility to mark winter break, summer break, or any custom day off
-    directly from the calendar UI.
     """
     row = conn.execute(
         "SELECT is_open FROM school_calendar WHERE date = ?",
@@ -115,7 +114,7 @@ def get_school_calendar_events(conn):
 
 def determine_punctuality(check_in: datetime, official_hhmm: str) -> str:
     official = parse_time_hhmm(official_hhmm)
-    official_dt = datetime.combine(check_in.date(), official)
+    official_dt = datetime.combine(check_in.date(), official, tzinfo=PKT)
     return "on-time" if check_in <= official_dt else "late"
 
 
@@ -131,7 +130,7 @@ def record_check_in(conn, teacher_email: str, day: str):
     if existing:
         return existing
 
-    now = datetime.now()
+    now = datetime.now(PKT)
     official_time = get_official_check_in_time(conn)
     punctuality = determine_punctuality(now, official_time)
 
@@ -286,7 +285,6 @@ def init_db():
         )
     """)
 
-    # Ensure is_active column exists for teacher deactivation / removal when they leave school
     _add_column_if_missing(cur, "users", "is_active", "INTEGER DEFAULT 1")
 
     cur.execute("""
