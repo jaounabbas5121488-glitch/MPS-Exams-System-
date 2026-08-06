@@ -4,57 +4,83 @@
 
 {% block content %}
 <div class="mb-6">
-  <a href="/dashboard" class="text-blue-600 text-sm hover:underline flex items-center gap-1">← Back to Dashboard</a>
+  <a href="/dashboard" class="text-indigo-600 text-sm hover:underline flex items-center gap-1 font-medium">← Back to Dashboard</a>
 </div>
 
-<div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-6 mb-8 shadow-lg text-white">
-  <p class="text-blue-200 text-sm font-medium">Monthly Attendance Report</p>
+<div class="bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-800 rounded-2xl p-6 mb-8 shadow-lg text-white">
+  <p class="text-indigo-200 text-sm font-medium">Monthly Attendance Report</p>
   <h1 class="text-2xl font-bold mt-0.5">{{ stats.month_name }}</h1>
-  <p class="text-blue-300 text-sm mt-1">
+  <p class="text-indigo-200 text-sm mt-1">
     Official check-in time: <span class="font-semibold text-white">{{ stats.official_check_in_display }}</span>
   </p>
 </div>
 
+<!-- Stat cards -->
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-  <div class="bg-white rounded-2xl shadow p-5">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">School Open Days</p>
     <p class="text-3xl font-bold text-gray-800 mt-2">{{ stats.total_open_days }}</p>
     <p class="text-xs text-gray-400 mt-1">Days school was open this month</p>
   </div>
-  <div class="bg-white rounded-2xl shadow p-5">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Days Present</p>
-    <p class="text-3xl font-bold text-green-600 mt-2">{{ stats.present_days }}</p>
+    <p class="text-3xl font-bold text-emerald-600 mt-2">{{ stats.present_days }}</p>
     <p class="text-xs text-gray-400 mt-1">{{ stats.attendance_rate }}% attendance rate</p>
   </div>
-  <div class="bg-white rounded-2xl shadow p-5">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">On-Time</p>
-    <p class="text-3xl font-bold text-blue-600 mt-2">{{ stats.on_time_count }}</p>
+    <p class="text-3xl font-bold text-indigo-600 mt-2">{{ stats.on_time_count }}</p>
     <p class="text-xs text-gray-400 mt-1">{{ stats.punctuality_rate }}% punctuality</p>
   </div>
-  <div class="bg-white rounded-2xl shadow p-5">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Late Check-ins</p>
-    <p class="text-3xl font-bold text-yellow-600 mt-2">{{ stats.late_count }}</p>
+    <p class="text-3xl font-bold text-amber-500 mt-2">{{ stats.late_count }}</p>
     <p class="text-xs text-gray-400 mt-1">{{ stats.absent_days }} absent on open days</p>
   </div>
 </div>
 
+<!-- This month's charts -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-  <div class="bg-white rounded-2xl shadow p-6">
-    <h2 class="text-lg font-semibold text-gray-800 mb-4">Attendance Overview</h2>
-    <div class="h-64 flex items-center justify-center">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <h2 class="text-lg font-semibold text-gray-800 mb-1">Attendance Overview</h2>
+    <p class="text-xs text-gray-400 mb-4">Present vs. absent days this month</p>
+    <div class="h-64 flex items-center justify-center relative">
       <canvas id="attendanceChart"></canvas>
+      <div id="attendanceCenterLabel" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <span class="text-2xl font-bold text-gray-800">{{ stats.attendance_rate }}%</span>
+        <span class="text-xs text-gray-400">Present</span>
+      </div>
+    </div>
+    <div class="flex justify-center gap-6 mt-3 text-xs">
+      <span class="flex items-center gap-1.5 text-gray-600"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Present</span>
+      <span class="flex items-center gap-1.5 text-gray-600"><span class="w-2.5 h-2.5 rounded-full bg-gray-300 inline-block"></span> Absent</span>
     </div>
   </div>
 
-  <div class="bg-white rounded-2xl shadow p-6">
-    <h2 class="text-lg font-semibold text-gray-800 mb-4">Punctuality Breakdown</h2>
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <h2 class="text-lg font-semibold text-gray-800 mb-1">Punctuality Breakdown</h2>
+    <p class="text-xs text-gray-400 mb-4">On-time vs. late check-ins this month</p>
     <div class="h-64 flex items-center justify-center">
       <canvas id="punctualityChart"></canvas>
     </div>
   </div>
 </div>
 
-<div class="bg-white rounded-2xl shadow p-6">
+<!-- Session-wide monthly trend graphs (grows automatically each new month) -->
+<div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-1">📊 Attendance % — Whole Session</h2>
+  <p class="text-xs text-gray-400 mb-5">One bar per month since the session started. A new bar appears automatically once a new month begins.</p>
+  <canvas id="sessionTrendChart" height="90"></canvas>
+</div>
+
+<div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-1">⏰ Average Check-in Time — Month by Month</h2>
+  <p class="text-xs text-gray-400 mb-5">Your average check-in time each month (lower on the chart = earlier in the morning).</p>
+  <canvas id="sessionTimeChart" height="90"></canvas>
+</div>
+
+<!-- Records table -->
+<div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
   <h2 class="text-lg font-semibold text-gray-800 mb-4">Check-in History (This Month)</h2>
   {% if stats.records %}
   <div class="overflow-x-auto">
@@ -73,11 +99,11 @@
           <td class="px-4 py-3 text-gray-600">{{ record.check_in_time }}</td>
           <td class="px-4 py-3">
             {% if record.punctuality == "on-time" %}
-            <span class="inline-flex items-center gap-1.5 bg-green-100 text-green-700 text-xs font-semibold px-3 py-1 rounded-full">
+            <span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full">
               On-Time
             </span>
             {% else %}
-            <span class="inline-flex items-center gap-1.5 bg-yellow-100 text-yellow-700 text-xs font-semibold px-3 py-1 rounded-full">
+            <span class="inline-flex items-center gap-1.5 bg-amber-100 text-amber-700 text-xs font-semibold px-3 py-1 rounded-full">
               Late
             </span>
             {% endif %}
@@ -95,7 +121,7 @@
   {% endif %}
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
   const attendanceCtx = document.getElementById('attendanceChart');
   const punctualityCtx = document.getElementById('punctualityChart');
@@ -106,28 +132,9 @@
       labels: ['Present', 'Absent'],
       datasets: [{
         data: [{{ stats.present_days }}, {{ stats.absent_days }}],
-        backgroundColor: ['#22c55e', '#e5e7eb'],
+        backgroundColor: ['#10b981', '#e5e7eb'],
         borderWidth: 0,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'bottom' }
-      }
-    }
-  });
-
-  new Chart(punctualityCtx, {
-    type: 'bar',
-    data: {
-      labels: ['On-Time', 'Late'],
-      datasets: [{
-        label: 'Check-ins',
-        data: [{{ stats.on_time_count }}, {{ stats.late_count }}],
-        backgroundColor: ['#3b82f6', '#f59e0b'],
-        borderRadius: 8,
+        cutout: '72%',
       }]
     },
     options: {
@@ -135,11 +142,97 @@
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false }
+      }
+    }
+  });
+
+  new Chart(punctualityCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['On-Time', 'Late'],
+      datasets: [{
+        data: [{{ stats.on_time_count }}, {{ stats.late_count }}],
+        backgroundColor: ['#6366f1', '#f59e0b'],
+        borderWidth: 0,
+        cutout: '65%',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, padding: 16, font: { size: 12 } } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('sessionTrendChart'), {
+    type: 'bar',
+    data: {
+      labels: {{ trend_labels | tojson }},
+      datasets: [{
+        label: 'Attendance %',
+        data: {{ trend_values | tojson }},
+        backgroundColor: 'rgba(99,102,241,0.55)',
+        borderColor: '#6366f1',
+        borderWidth: 1.5,
+        borderRadius: 8,
+        maxBarThickness: 46
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, max: 100, ticks: { color: '#6b7280' }, grid: { color: '#f1f5f9' } },
+        x: { ticks: { color: '#6b7280' }, grid: { display: false } }
+      }
+    }
+  });
+
+  const timeLabels = {{ time_labels | tojson }};
+  const timeValues = {{ time_values | tojson }};
+  const timeDisplay = {{ time_display | tojson }};
+
+  new Chart(document.getElementById('sessionTimeChart'), {
+    type: 'line',
+    data: {
+      labels: timeLabels,
+      datasets: [{
+        label: 'Avg. Check-in Time',
+        data: timeValues,
+        borderColor: '#f59e0b',
+        backgroundColor: 'rgba(245,158,11,0.12)',
+        tension: 0.35,
+        fill: true,
+        spanGaps: true,
+        pointBackgroundColor: '#f59e0b',
+        pointRadius: 4
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              return 'Avg check-in: ' + timeDisplay[ctx.dataIndex];
+            }
+          }
+        }
       },
       scales: {
+        x: { ticks: { color: '#6b7280' }, grid: { display: false } },
         y: {
-          beginAtZero: true,
-          ticks: { stepSize: 1 }
+          ticks: {
+            color: '#6b7280',
+            callback: function(value) {
+              let hh = Math.floor(value / 60), mm = Math.round(value % 60);
+              let ampm = hh < 12 ? 'AM' : 'PM';
+              let disp = hh % 12 || 12;
+              return disp + ':' + String(mm).padStart(2,'0') + ' ' + ampm;
+            }
+          },
+          grid: { color: '#f1f5f9' }
         }
       }
     }

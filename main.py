@@ -20,9 +20,11 @@ from database import (
     record_check_in,
     get_progress_stats,
     get_monthly_trend,
+    get_monthly_attendance_time_trend,
     get_all_teachers_average_trend,
     bulk_set_school_days,
     get_school_calendar_events,
+    count_total_open_days_marked,
     set_setting,
 )
 
@@ -169,7 +171,6 @@ def admin_panel(request: Request):
     today = date.today().isoformat()
     school_open_today = is_school_open(conn, today)
 
-    # Build today's live attendance status/time for every approved teacher
     approved = []
     for row in approved_rows:
         t = dict(row)
@@ -190,8 +191,8 @@ def admin_panel(request: Request):
     official_check_in_time = get_official_check_in_time(conn)
     official_check_in_display = format_time_display(official_check_in_time)
 
-    # Same-style progress graph as teacher's own progress page, averaged across all teachers
-    chart_months, chart_values = get_all_teachers_average_trend(conn, months=6)
+    chart_months, chart_values = get_all_teachers_average_trend(conn)
+    total_session_open_days = count_total_open_days_marked(conn)
 
     conn.close()
 
@@ -208,6 +209,7 @@ def admin_panel(request: Request):
         "calendar_saved": request.query_params.get("calendar_saved"),
         "chart_months": chart_months,
         "chart_values": chart_values,
+        "total_session_open_days": total_session_open_days,
     })
 
 
@@ -250,11 +252,6 @@ def reject_teacher(teacher_id: int, request: Request):
 
 @app.post("/admin/remove-teacher/{teacher_id}")
 def remove_teacher(teacher_id: int, request: Request):
-    """
-    Used when a teacher leaves the school. We don't delete their history
-    (attendance / marks stay intact for records), we just deactivate them:
-    they disappear from the active-teachers list and can no longer log in.
-    """
     user = current_user(request)
     if not user or user.get("role") != "admin":
         return RedirectResponse(url="/login", status_code=303)
@@ -267,7 +264,6 @@ def remove_teacher(teacher_id: int, request: Request):
 
 @app.post("/admin/calendar")
 def set_calendar(request: Request, is_open: int = Form(...)):
-    """Quick single-day toggle for TODAY only (the small card at the top)."""
     user = current_user(request)
     if not user or user.get("role") != "admin":
         return RedirectResponse(url="/login", status_code=303)
@@ -284,7 +280,6 @@ def set_calendar(request: Request, is_open: int = Form(...)):
 
 @app.get("/admin/calendar/school-days")
 def get_calendar_days(request: Request):
-    """Returns saved open/closed overrides so FullCalendar can render them as colored days."""
     user = current_user(request)
     if not user or user.get("role") != "admin":
         return JSONResponse({"error": "unauthorized"}, status_code=401)
@@ -296,12 +291,6 @@ def get_calendar_days(request: Request):
 
 @app.post("/admin/calendar/school-days")
 async def save_calendar_days(request: Request):
-    """
-    Bulk save from the full academic calendar. Accepts:
-    { "dates": { "2026-09-05": true, "2026-09-06": false, ... } }
-    Supports single day, a whole dragged week, or a full vacation range —
-    the frontend just sends every changed date in one request.
-    """
     user = current_user(request)
     if not user or user.get("role") != "admin":
         return JSONResponse({"success": False, "error": "unauthorized"}, status_code=401)
@@ -323,7 +312,6 @@ async def save_calendar_days(request: Request):
 
 @app.get("/admin/teacher/{teacher_id}/reports", response_class=HTMLResponse)
 def admin_teacher_reports(teacher_id: int, request: Request, year: int | None = None, month: int | None = None):
-    """Same progress-report graphs the teacher sees, viewable here by admin."""
     user = current_user(request)
     if not user or user.get("role") != "admin":
         return RedirectResponse(url="/login", status_code=303)
@@ -335,7 +323,8 @@ def admin_teacher_reports(teacher_id: int, request: Request, year: int | None = 
         raise HTTPException(status_code=404, detail="Teacher not found")
 
     stats = get_progress_stats(conn, teacher["email"], year, month)
-    trend_labels, trend_values = get_monthly_trend(conn, teacher["email"], months=6)
+    trend_labels, trend_values = get_monthly_trend(conn, teacher["email"])
+    time_labels, time_values, time_display = get_monthly_attendance_time_trend(conn, teacher["email"])
     conn.close()
 
     prev_year, prev_month = shift_month(stats["year"], stats["month"], -1)
@@ -348,6 +337,9 @@ def admin_teacher_reports(teacher_id: int, request: Request, year: int | None = 
         "stats": stats,
         "trend_labels": trend_labels,
         "trend_values": trend_values,
+        "time_labels": time_labels,
+        "time_values": time_values,
+        "time_display": time_display,
         "prev_year": prev_year,
         "prev_month": prev_month,
         "next_year": next_year,
@@ -427,12 +419,19 @@ def progress(request: Request):
 
     conn = get_db()
     stats = get_progress_stats(conn, user["email"])
+    trend_labels, trend_values = get_monthly_trend(conn, user["email"])
+    time_labels, time_values, time_display = get_monthly_attendance_time_trend(conn, user["email"])
     conn.close()
 
     return templates.TemplateResponse("progress.html", {
         "request": request,
         "user": user,
         "stats": stats,
+        "trend_labels": trend_labels,
+        "trend_values": trend_values,
+        "time_labels": time_labels,
+        "time_values": time_values,
+        "time_display": time_display,
     })
 
 

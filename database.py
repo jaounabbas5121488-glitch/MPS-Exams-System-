@@ -6,7 +6,11 @@ from zoneinfo import ZoneInfo
 
 DB_PATH = "mps_exams.db"
 DEFAULT_CHECK_IN_TIME = "08:30"
-PKT = ZoneInfo("Asia/Karachi")  # Pakistan Standard Time - fixes wrong attendance time
+PKT = ZoneInfo("Asia/Karachi")
+
+# Academic session starts here. Everything (calendar defaults, monthly graphs)
+# is calculated relative to this date.
+SESSION_START = date(2026, 9, 1)
 
 
 def get_db():
@@ -58,15 +62,16 @@ def get_official_check_in_time(conn) -> str:
 
 def is_school_open(conn, day_str: str) -> bool:
     """
-    Fully calendar-driven: a day is OPEN unless the admin has explicitly
-    marked it CLOSED (is_open = 0) in school_calendar via the admin calendar tool.
+    A day is OPEN only if the admin has explicitly ticked it in the calendar
+    (is_open = 1). Anything not marked is CLOSED by default -- this matches
+    "jaha jaha tick karoon wahi school day hoga".
     """
     row = conn.execute(
         "SELECT is_open FROM school_calendar WHERE date = ?",
         (day_str,),
     ).fetchone()
     if row is None:
-        return True
+        return False
     return bool(row["is_open"])
 
 
@@ -77,12 +82,11 @@ def get_school_open_status(conn, day: str) -> int:
 def bulk_set_school_days(conn, dates: dict):
     """
     dates: { "2026-09-05": True, "2026-09-06": False, ... }
-    Used by the admin calendar (click / drag-select multiple days at once,
-    e.g. a full week, or a whole vacation range).
+    Handles single day, a dragged week, or a full vacation range in one go.
     """
     for day_str, is_open in dates.items():
         try:
-            date.fromisoformat(day_str)  # validate format, skip junk
+            date.fromisoformat(day_str)
         except (ValueError, TypeError):
             continue
         conn.execute(
@@ -97,9 +101,7 @@ def bulk_set_school_days(conn, dates: dict):
 
 
 def get_school_calendar_events(conn):
-    """
-    Returns saved calendar overrides formatted for FullCalendar background events.
-    """
+    """All saved overrides, for FullCalendar to color in."""
     rows = conn.execute("SELECT date, is_open FROM school_calendar ORDER BY date").fetchall()
     events = []
     for row in rows:
@@ -110,6 +112,18 @@ def get_school_calendar_events(conn):
             "title": "Open" if row["is_open"] else "Off",
         })
     return events
+
+
+def count_total_open_days_marked(conn, start: date | None = None, end: date | None = None) -> int:
+    """Total school-open days marked across the whole session (dynamic)."""
+    start = start or SESSION_START
+    query = "SELECT COUNT(*) as c FROM school_calendar WHERE is_open = 1 AND date >= ?"
+    params = [start.isoformat()]
+    if end:
+        query += " AND date <= ?"
+        params.append(end.isoformat())
+    row = conn.execute(query, params).fetchone()
+    return row["c"] if row else 0
 
 
 def determine_punctuality(check_in: datetime, official_hhmm: str) -> str:
@@ -215,35 +229,83 @@ def get_progress_stats(conn, teacher_email: str, year: int | None = None, month:
     }
 
 
-def get_monthly_trend(conn, teacher_email: str, months: int = 6):
+def get_session_months(upto: date | None = None):
     """
-    Last N months (including current) attendance-rate trend for ONE teacher.
-    Used to draw the same progress-report style graph on the admin panel.
+    All (year, month) pairs from SESSION_START up to today -- grows by
+    itself every time a new month begins. Nothing to configure manually.
     """
-    today = date.today()
-    seq = []
-    y, m = today.year, today.month
-    for i in range(months - 1, -1, -1):
-        mm = m - i
-        yy = y
-        while mm <= 0:
-            mm += 12
-            yy -= 1
-        seq.append((yy, mm))
+    upto = upto or date.today()
+    if (upto.year, upto.month) < (SESSION_START.year, SESSION_START.month):
+        return [(SESSION_START.year, SESSION_START.month)]
+    months = []
+    y, m = SESSION_START.year, SESSION_START.month
+    while (y, m) <= (upto.year, upto.month):
+        months.append((y, m))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return months
 
+
+def get_monthly_trend(conn, teacher_email: str):
+    """
+    Attendance % for EVERY month of the session so far (Sept 2026 -> current
+    month). A new bar/point appears automatically once a new month starts.
+    """
     labels, rates = [], []
-    for yy, mm in seq:
+    for yy, mm in get_session_months():
         stats = get_progress_stats(conn, teacher_email, yy, mm)
         labels.append(stats["month_name"])
         rates.append(stats["attendance_rate"])
     return labels, rates
 
 
-def get_all_teachers_average_trend(conn, months: int = 6):
+def get_monthly_attendance_time_trend(conn, teacher_email: str):
     """
-    Average monthly attendance-rate trend across ALL active approved teachers,
-    for the overview graph shown directly on the admin dashboard.
+    Average check-in TIME per month (in minutes past midnight, plus a
+    human-readable version) for every month of the session so far.
     """
+    labels, avg_minutes, avg_display = [], [], []
+    for yy, mm in get_session_months():
+        label = date(yy, mm, 1).strftime("%b %Y")
+        month_start = date(yy, mm, 1).isoformat()
+        _, dim = monthrange(yy, mm)
+        month_end = date(yy, mm, dim).isoformat()
+
+        rows = conn.execute(
+            """
+            SELECT check_in_ts FROM attendance
+            WHERE teacher_email = ? AND date >= ? AND date <= ? AND check_in_ts IS NOT NULL
+            """,
+            (teacher_email, month_start, month_end),
+        ).fetchall()
+
+        minutes_list = []
+        for r in rows:
+            try:
+                dt = datetime.fromisoformat(r["check_in_ts"])
+                minutes_list.append(dt.hour * 60 + dt.minute)
+            except Exception:
+                continue
+
+        labels.append(label)
+        if minutes_list:
+            avg = sum(minutes_list) / len(minutes_list)
+            avg_minutes.append(round(avg, 1))
+            hh, mmm = int(avg // 60), int(avg % 60)
+            ampm = "AM" if hh < 12 else "PM"
+            disp_hh = hh % 12 or 12
+            avg_display.append(f"{disp_hh:02d}:{mmm:02d} {ampm}")
+        else:
+            avg_minutes.append(None)
+            avg_display.append("—")
+
+    return labels, avg_minutes, avg_display
+
+
+def get_all_teachers_average_trend(conn):
+    """Average monthly attendance % across all active teachers, whole session so far."""
     teachers = conn.execute(
         "SELECT email FROM users WHERE role = 'teacher' AND status = 'approved' AND is_active = 1"
     ).fetchall()
@@ -255,7 +317,7 @@ def get_all_teachers_average_trend(conn, months: int = 6):
     sums = None
     count = 0
     for t in teachers:
-        t_labels, t_rates = get_monthly_trend(conn, t["email"], months)
+        t_labels, t_rates = get_monthly_trend(conn, t["email"])
         if labels is None:
             labels = t_labels
             sums = [0.0] * len(t_rates)
@@ -364,24 +426,15 @@ def init_db():
 
     has_classes = cur.execute("SELECT id FROM classes LIMIT 1").fetchone()
     if not has_classes:
-        cur.executemany(
-            "INSERT INTO classes (name) VALUES (?)",
-            [("Class 1",), ("Class 2",)],
-        )
+        cur.executemany("INSERT INTO classes (name) VALUES (?)", [("Class 1",), ("Class 2",)])
 
     has_subjects = cur.execute("SELECT id FROM subjects LIMIT 1").fetchone()
     if not has_subjects:
-        cur.executemany(
-            "INSERT INTO subjects (name) VALUES (?)",
-            [("Mathematics",), ("Science",)],
-        )
+        cur.executemany("INSERT INTO subjects (name) VALUES (?)", [("Mathematics",), ("Science",)])
 
     has_tests = cur.execute("SELECT id FROM test_types LIMIT 1").fetchone()
     if not has_tests:
-        cur.executemany(
-            "INSERT INTO test_types (name) VALUES (?)",
-            [("Test 1",), ("Test 2",)],
-        )
+        cur.executemany("INSERT INTO test_types (name) VALUES (?)", [("Test 1",), ("Test 2",)])
 
     has_students = cur.execute("SELECT id FROM students LIMIT 1").fetchone()
     if not has_students:
@@ -393,10 +446,7 @@ def init_db():
                     (f"{class_row['name']} - Student {i}", class_row["id"]),
                 )
 
-    admin_exists = cur.execute(
-        "SELECT id FROM users WHERE email = ?",
-        ("admin@mps.com",),
-    ).fetchone()
+    admin_exists = cur.execute("SELECT id FROM users WHERE email = ?", ("admin@mps.com",)).fetchone()
     if not admin_exists:
         cur.execute(
             """
@@ -404,16 +454,7 @@ def init_db():
               (email, password, full_name, father_name, qualifications, experience, role, status, is_active)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
             """,
-            (
-                "admin@mps.com",
-                hash_password("admin123"),
-                "Administrator",
-                "N/A",
-                "N/A",
-                "N/A",
-                "admin",
-                "approved",
-            ),
+            ("admin@mps.com", hash_password("admin123"), "Administrator", "N/A", "N/A", "N/A", "admin", "approved"),
         )
 
     conn.commit()

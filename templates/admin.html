@@ -3,13 +3,12 @@
 {% block main_class %}max-w-7xl mx-auto px-4 py-10{% endblock %}
 
 {% block content %}
-<!-- Header Section -->
-<div class="mb-10 bg-slate-900 rounded-3xl p-8 shadow-xl text-white flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+<div class="mb-10 bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white flex flex-col md:flex-row md:items-center md:justify-between gap-4 border border-slate-800">
   <div>
     <h1 class="text-3xl font-extrabold tracking-tight">MPS Admin Panel</h1>
     <p class="text-slate-400 text-sm mt-1">Manage institutional schedules, teacher credentials, and system settings efficiently.</p>
   </div>
-  <div class="inline-flex items-center gap-2 bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl text-xs font-medium text-slate-300">
+  <div class="inline-flex items-center gap-2 bg-slate-800/80 border border-slate-700 px-4 py-2 rounded-xl text-xs font-medium text-slate-300">
     <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
     System Status: Live & Secure
   </div>
@@ -21,13 +20,6 @@
 </div>
 {% endif %}
 
-{% if calendar_saved %}
-<div class="bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 rounded-2xl px-6 py-4 mb-8 text-sm flex items-center gap-3 shadow-lg backdrop-blur">
-  <span class="text-lg">✅</span> School calendar updated successfully.
-</div>
-{% endif %}
-
-<!-- Grid: School Status & Check-in Time -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
 
   <div class="bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-xl flex flex-col justify-between text-white">
@@ -88,17 +80,26 @@
   </div>
 </div>
 
-<!-- ================= SCHOOL CALENDAR (Academic Session) ================= -->
+<!-- ================= SCHOOL CALENDAR ================= -->
 <div class="bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-xl mb-10 text-white">
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-3">
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
     <div>
       <h2 class="text-lg font-bold flex items-center gap-2">🗓️ Academic Calendar — Session 2026-27</h2>
-      <p class="text-sm text-slate-400 mt-1">Click / drag over dates to mark them as <span class="text-emerald-400 font-medium">School Open</span> days. Click again to unmark. Session starts 1 September 2026.</p>
+      <p class="text-sm text-slate-400 mt-1">Click / drag over dates to mark them as <span class="text-emerald-400 font-medium">School Open</span> days. Untouched days stay closed by default.</p>
     </div>
     <div class="flex items-center gap-4 text-xs">
       <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-500 inline-block"></span> Open Day</span>
       <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-slate-700 inline-block"></span> Off Day</span>
     </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3 mb-5">
+    <span class="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold px-4 py-2 rounded-xl">
+      📊 Total Session Open Days: <span class="font-mono text-sm">{{ total_session_open_days }}</span>
+    </span>
+    <span id="month-open-count" class="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold px-4 py-2 rounded-xl">
+      This month: 0 open days
+    </span>
   </div>
 
   <div id="school-calendar" class="rounded-2xl overflow-hidden border border-slate-800"></div>
@@ -208,6 +209,10 @@
               <span class="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs font-semibold px-3 py-1.5 rounded-full">
                 <span class="w-2 h-2 bg-amber-500 rounded-full"></span> Late
               </span>
+            {% elif teacher.today_status == 'holiday' %}
+              <span class="inline-flex items-center gap-1.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 text-xs font-semibold px-3 py-1.5 rounded-full">
+                <span class="w-2 h-2 bg-indigo-400 rounded-full"></span> Holiday
+              </span>
             {% elif teacher.today_status == 'absent' %}
               <span class="inline-flex items-center gap-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/30 text-xs font-semibold px-3 py-1.5 rounded-full">
                 <span class="w-2 h-2 bg-rose-500 rounded-full"></span> Absent
@@ -249,10 +254,10 @@
   {% endif %}
 </div>
 
-<!-- ================= PROGRESS REPORT GRAPHS (placeholder – wired after main.py review) ================= -->
+<!-- ================= OVERALL PROGRESS GRAPH ================= -->
 <div class="bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-xl text-white">
-  <h2 class="text-lg font-bold flex items-center gap-2 mb-2">📊 Teacher Attendance — Progress Reports</h2>
-  <p class="text-sm text-slate-400 mb-6">Monthly & yearly attendance trend per teacher. Data will populate once report endpoints are connected.</p>
+  <h2 class="text-lg font-bold flex items-center gap-2 mb-2">📊 Overall Teacher Attendance — Month by Month</h2>
+  <p class="text-sm text-slate-400 mb-6">Average attendance % across all active teachers, one bar per month of this session. New months appear automatically. For an individual teacher's month-wise graphs, use "View Reports" above.</p>
   <canvas id="teacherProgressChart" height="90"></canvas>
 </div>
 
@@ -260,43 +265,83 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  const changedDates = {}; // { "2026-09-05": true/false }
+  const changedDates = {};
+  let savedOpenDates = new Set();
+  let currentViewStart = null;
+  let currentViewEnd = null;
 
-  const calendarEl = document.getElementById('school-calendar');
-  const calendar = new FullCalendar.Calendar(calendarEl, {
-    initialView: 'dayGridMonth',
-    initialDate: '2026-09-01',
-    height: 650,
-    selectable: true,
-    themeSystem: 'standard',
-    events: '/admin/calendar/school-days', // backend returns existing open-days as events
+  function toDateStr(d) {
+    return d.toISOString().split('T')[0];
+  }
 
-    select: function (info) {
-      // Drag-select a range -> toggle all days in range to OPEN
-      let current = new Date(info.start);
-      while (current < info.end) {
-        const dateStr = current.toISOString().split('T')[0];
-        changedDates[dateStr] = true;
-        markDayOpen(dateStr, true);
-        current.setDate(current.getDate() + 1);
-      }
-      calendar.unselect();
-      updateCounter();
-    },
-
-    dateClick: function (info) {
-      const dateStr = info.dateStr;
-      const cell = info.dayEl;
-      const isCurrentlyOpen = cell.classList.contains('school-open-day');
-      changedDates[dateStr] = !isCurrentlyOpen;
-      markDayOpen(dateStr, !isCurrentlyOpen);
-      updateCounter();
+  function recomputeMonthCount() {
+    if (!currentViewStart || !currentViewEnd) return;
+    let count = 0;
+    let cursor = new Date(currentViewStart);
+    while (cursor < currentViewEnd) {
+      const ds = toDateStr(cursor);
+      const isOpen = (ds in changedDates) ? changedDates[ds] : savedOpenDates.has(ds);
+      if (isOpen) count++;
+      cursor.setDate(cursor.getDate() + 1);
     }
-  });
-  calendar.render();
+    document.getElementById('month-open-count').innerText = 'This month: ' + count + ' open days';
+  }
+
+  fetch('/admin/calendar/school-days')
+    .then(res => res.json())
+    .then(events => {
+      events.forEach(ev => {
+        if (ev.title === 'Open') savedOpenDates.add(ev.start);
+      });
+      initCalendar(events);
+    })
+    .catch(() => initCalendar([]));
+
+  function initCalendar(events) {
+    const calendarEl = document.getElementById('school-calendar');
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView: 'dayGridMonth',
+      initialDate: '2026-09-01',
+      height: 650,
+      selectable: true,
+      themeSystem: 'standard',
+      events: events,
+
+      datesSet: function (info) {
+        currentViewStart = info.view.currentStart;
+        currentViewEnd = info.view.currentEnd;
+        recomputeMonthCount();
+      },
+
+      select: function (info) {
+        let current = new Date(info.start);
+        while (current < info.end) {
+          const dateStr = toDateStr(current);
+          changedDates[dateStr] = true;
+          markDayOpen(dateStr, true);
+          current.setDate(current.getDate() + 1);
+        }
+        calendar.unselect();
+        updateCounter();
+      },
+
+      dateClick: function (info) {
+        const dateStr = info.dateStr;
+        const cell = info.dayEl;
+        const isCurrentlyOpen = cell.classList.contains('school-open-day');
+        changedDates[dateStr] = !isCurrentlyOpen;
+        markDayOpen(dateStr, !isCurrentlyOpen);
+        updateCounter();
+      }
+    });
+    calendar.render();
+    currentViewStart = calendar.view.currentStart;
+    currentViewEnd = calendar.view.currentEnd;
+    recomputeMonthCount();
+  }
 
   function markDayOpen(dateStr, isOpen) {
-    const cell = calendarEl.querySelector('[data-date="' + dateStr + '"]');
+    const cell = document.querySelector('#school-calendar [data-date="' + dateStr + '"]');
     if (!cell) return;
     if (isOpen) {
       cell.classList.add('school-open-day');
@@ -309,6 +354,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function updateCounter() {
     document.getElementById('selected-count').innerText = Object.keys(changedDates).length + ' dates changed';
+    recomputeMonthCount();
   }
 
   document.getElementById('save-calendar-btn').addEventListener('click', function () {
@@ -327,27 +373,27 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
-  // Progress chart placeholder (real data injected by backend later)
   const ctx = document.getElementById('teacherProgressChart');
   if (ctx) {
     new Chart(ctx, {
-      type: 'line',
+      type: 'bar',
       data: {
-        labels: {{ chart_months | tojson if chart_months else '["Jan","Feb","Mar","Apr","May","Jun"]' | safe }},
+        labels: {{ chart_months | tojson }},
         datasets: [{
           label: 'Overall Attendance %',
-          data: {{ chart_values | tojson if chart_values else '[0,0,0,0,0,0]' | safe }},
-          borderColor: '#22d3ee',
-          backgroundColor: 'rgba(34,211,238,0.1)',
-          tension: 0.4,
-          fill: true
+          data: {{ chart_values | tojson }},
+          backgroundColor: 'rgba(99,102,241,0.55)',
+          borderColor: '#818cf8',
+          borderWidth: 1.5,
+          borderRadius: 8,
+          maxBarThickness: 46
         }]
       },
       options: {
         plugins: { legend: { labels: { color: '#94a3b8' } } },
         scales: {
           x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
+          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true, max: 100 }
         }
       }
     });
