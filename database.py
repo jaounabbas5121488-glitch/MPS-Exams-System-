@@ -63,8 +63,9 @@ def get_official_check_in_time(conn) -> str:
 def is_school_open(conn, day_str: str) -> bool:
     """
     A day is OPEN only if the admin has explicitly ticked it in the calendar
-    (is_open = 1). Anything not marked is CLOSED by default -- this matches
-    "jaha jaha tick karoon wahi school day hoga".
+    (is_open = 1). Anything not marked is CLOSED by default. This is the
+    single source of truth for the whole system -- no other endpoint should
+    write school-open state.
     """
     row = conn.execute(
         "SELECT is_open FROM school_calendar WHERE date = ?",
@@ -83,20 +84,31 @@ def bulk_set_school_days(conn, dates: dict):
     """
     dates: { "2026-09-05": True, "2026-09-06": False, ... }
     Handles single day, a dragged week, or a full vacation range in one go.
+
+    IMPORTANT: if a date is being switched to CLOSED, any attendance already
+    recorded by teachers for that date is deleted -- a day that is not a
+    school day cannot have attendance against it.
     """
     for day_str, is_open in dates.items():
         try:
             date.fromisoformat(day_str)
         except (ValueError, TypeError):
             continue
+
+        is_open_int = 1 if is_open else 0
+
         conn.execute(
             """
             INSERT INTO school_calendar (date, is_open)
             VALUES (?, ?)
             ON CONFLICT(date) DO UPDATE SET is_open = excluded.is_open
             """,
-            (day_str, 1 if is_open else 0),
+            (day_str, is_open_int),
         )
+
+        if is_open_int == 0:
+            conn.execute("DELETE FROM attendance WHERE date = ?", (day_str,))
+
     conn.commit()
 
 
@@ -166,14 +178,19 @@ def record_check_in(conn, teacher_email: str, day: str):
 
 
 def count_open_days_in_month(conn, year: int, month: int, up_to_day: int | None = None) -> int:
+    """
+    Single-query count of open days in a month, always read directly from
+    school_calendar so it can never drift from the calendar UI's own state.
+    """
     _, days_in_month = monthrange(year, month)
     last_day = up_to_day if up_to_day is not None else days_in_month
-    open_days = 0
-    for day_num in range(1, last_day + 1):
-        day_str = date(year, month, day_num).isoformat()
-        if is_school_open(conn, day_str):
-            open_days += 1
-    return open_days
+    start = date(year, month, 1).isoformat()
+    end = date(year, month, last_day).isoformat()
+    row = conn.execute(
+        "SELECT COUNT(*) as c FROM school_calendar WHERE is_open = 1 AND date >= ? AND date <= ?",
+        (start, end),
+    ).fetchone()
+    return row["c"] if row else 0
 
 
 def get_progress_stats(conn, teacher_email: str, year: int | None = None, month: int | None = None) -> dict:
@@ -363,10 +380,14 @@ def init_db():
     _add_column_if_missing(cur, "attendance", "check_in_ts", "TEXT")
     _add_column_if_missing(cur, "attendance", "punctuality", "TEXT DEFAULT 'on-time'")
 
+    # is_open defaults to 0 (closed) -- a day only becomes a school day when
+    # the admin explicitly marks it open via the calendar and saves. No row
+    # is ever inserted without an explicit is_open value in this codebase,
+    # but the column default matches that "closed unless marked" rule too.
     cur.execute("""
         CREATE TABLE IF NOT EXISTS school_calendar (
             date TEXT PRIMARY KEY,
-            is_open INTEGER NOT NULL DEFAULT 1
+            is_open INTEGER NOT NULL DEFAULT 0
         )
     """)
 

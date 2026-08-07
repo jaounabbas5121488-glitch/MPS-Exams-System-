@@ -262,20 +262,13 @@ def remove_teacher(teacher_id: int, request: Request):
     return RedirectResponse(url="/admin", status_code=303)
 
 
-@app.post("/admin/calendar")
-def set_calendar(request: Request, is_open: int = Form(...)):
-    user = current_user(request)
-    if not user or user.get("role") != "admin":
-        return RedirectResponse(url="/login", status_code=303)
-    today = date.today().isoformat()
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO school_calendar (date, is_open) VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET is_open = excluded.is_open",
-        (today, is_open),
-    )
-    conn.commit()
-    conn.close()
-    return RedirectResponse(url="/admin", status_code=303)
+# NOTE: the old single-day "/admin/calendar" quick Mark-Open/Mark-Closed
+# route has been intentionally removed. It used to write to school_calendar
+# independently of the dynamic calendar widget below, which is exactly what
+# caused "kabhi kabhi khud se koi date on ho jati thi" -- two systems were
+# fighting over the same table. The FullCalendar widget + its
+# /admin/calendar/school-days endpoints are now the ONLY way school days get
+# marked, anywhere in the app.
 
 
 @app.get("/admin/calendar/school-days")
