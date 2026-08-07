@@ -127,10 +127,17 @@ def get_school_calendar_events(conn):
 
 
 def count_total_open_days_marked(conn, start: date | None = None, end: date | None = None) -> int:
-    """Total school-open days marked across the whole session (dynamic)."""
-    start = start or SESSION_START
-    query = "SELECT COUNT(*) as c FROM school_calendar WHERE is_open = 1 AND date >= ?"
-    params = [start.isoformat()]
+    """
+    Total school-open days marked -- every date in school_calendar with
+    is_open = 1, no matter which month/year it falls in. Session-start
+    filtering removed here: if admin marks a day open, it counts in the
+    total, period.
+    """
+    query = "SELECT COUNT(*) as c FROM school_calendar WHERE is_open = 1"
+    params = []
+    if start:
+        query += " AND date >= ?"
+        params.append(start.isoformat())
     if end:
         query += " AND date <= ?"
         params.append(end.isoformat())
