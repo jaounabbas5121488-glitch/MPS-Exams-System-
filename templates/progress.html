@@ -66,17 +66,28 @@
   </div>
 </div>
 
-<!-- Session-wide monthly trend graphs (grows automatically each new month) -->
+<!-- Fixed, always-accumulating pie for the whole session so far -->
 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
-  <h2 class="text-lg font-semibold text-gray-800 mb-1">📊 Attendance % — Whole Session</h2>
-  <p class="text-xs text-gray-400 mb-5">One bar per month since the session started. A new bar appears automatically once a new month begins.</p>
-  <canvas id="sessionTrendChart" height="90"></canvas>
+  <h2 class="text-lg font-semibold text-gray-800 mb-1">📊 Total Session Attendance</h2>
+  <p class="text-xs text-gray-400 mb-5">Present vs. absent across the whole session so far (Sept 2026 → today). This only ever grows, never resets.</p>
+  <div class="h-64 flex items-center justify-center relative max-w-xs mx-auto">
+    <canvas id="sessionTotalPie"></canvas>
+    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+      <span class="text-2xl font-bold text-gray-800">{{ session_totals.attendance_rate }}%</span>
+      <span class="text-xs text-gray-400">Present</span>
+    </div>
+  </div>
+  <div class="flex justify-center gap-6 mt-3 text-xs">
+    <span class="flex items-center gap-1.5 text-gray-600"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Present ({{ session_totals.present_days }})</span>
+    <span class="flex items-center gap-1.5 text-gray-600"><span class="w-2.5 h-2.5 rounded-full bg-gray-300 inline-block"></span> Absent ({{ session_totals.absent_days }})</span>
+  </div>
 </div>
 
+<!-- One pie per month -- a new one appears automatically once a new month begins -->
 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
-  <h2 class="text-lg font-semibold text-gray-800 mb-1">⏰ Average Check-in Time — Month by Month</h2>
-  <p class="text-xs text-gray-400 mb-5">Your average check-in time each month (lower on the chart = earlier in the morning).</p>
-  <canvas id="sessionTimeChart" height="90"></canvas>
+  <h2 class="text-lg font-semibold text-gray-800 mb-1">📅 Month-wise Attendance</h2>
+  <p class="text-xs text-gray-400 mb-5">One pie chart per month since the session started.</p>
+  <div id="monthlyPieGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
 </div>
 
 <!-- Records table -->
@@ -166,76 +177,64 @@
     }
   });
 
-  new Chart(document.getElementById('sessionTrendChart'), {
-    type: 'bar',
+  // Fixed "whole session" pie -- present vs absent, never resets.
+  new Chart(document.getElementById('sessionTotalPie'), {
+    type: 'doughnut',
     data: {
-      labels: {{ trend_labels | tojson }},
+      labels: ['Present', 'Absent'],
       datasets: [{
-        label: 'Attendance %',
-        data: {{ trend_values | tojson }},
-        backgroundColor: 'rgba(99,102,241,0.55)',
-        borderColor: '#6366f1',
-        borderWidth: 1.5,
-        borderRadius: 8,
-        maxBarThickness: 46
+        data: [{{ session_totals.present_days }}, {{ session_totals.absent_days }}],
+        backgroundColor: ['#10b981', '#e5e7eb'],
+        borderWidth: 0,
+        cutout: '72%'
       }]
     },
     options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: true, max: 100, ticks: { color: '#6b7280' }, grid: { color: '#f1f5f9' } },
-        x: { ticks: { color: '#6b7280' }, grid: { display: false } }
-      }
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } }
     }
   });
 
-  const timeLabels = {{ time_labels | tojson }};
-  const timeValues = {{ time_values | tojson }};
-  const timeDisplay = {{ time_display | tojson }};
+  // One pie per session month -- built dynamically from monthly_breakdown,
+  // so a new card + pie simply appears once a new month's data exists.
+  const monthlyBreakdown = {{ monthly_breakdown | tojson }};
+  const monthlyPieGrid = document.getElementById('monthlyPieGrid');
 
-  new Chart(document.getElementById('sessionTimeChart'), {
-    type: 'line',
-    data: {
-      labels: timeLabels,
-      datasets: [{
-        label: 'Avg. Check-in Time',
-        data: timeValues,
-        borderColor: '#f59e0b',
-        backgroundColor: 'rgba(245,158,11,0.12)',
-        tension: 0.35,
-        fill: true,
-        spanGaps: true,
-        pointBackgroundColor: '#f59e0b',
-        pointRadius: 4
-      }]
-    },
-    options: {
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: function(ctx) {
-              return 'Avg check-in: ' + timeDisplay[ctx.dataIndex];
-            }
-          }
-        }
+  monthlyBreakdown.forEach(function (m, idx) {
+    const card = document.createElement('div');
+    card.className = 'border border-gray-100 rounded-xl p-4 flex flex-col items-center';
+    card.innerHTML =
+      '<p class="text-sm font-semibold text-gray-700 mb-2">' + m.month_name + '</p>' +
+      '<div class="h-40 w-40 relative">' +
+        '<canvas id="monthPie' + idx + '"></canvas>' +
+        '<div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">' +
+          '<span class="text-lg font-bold text-gray-800">' + m.attendance_rate + '%</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="flex gap-3 mt-2 text-[11px] text-gray-500">' +
+        '<span>Present: ' + m.present_days + '</span>' +
+        '<span>Absent: ' + m.absent_days + '</span>' +
+      '</div>';
+    monthlyPieGrid.appendChild(card);
+
+    new Chart(document.getElementById('monthPie' + idx), {
+      type: 'doughnut',
+      data: {
+        labels: ['Present', 'Absent'],
+        datasets: [{
+          data: [m.present_days, m.absent_days],
+          backgroundColor: ['#10b981', '#e5e7eb'],
+          borderWidth: 0,
+          cutout: '70%'
+        }]
       },
-      scales: {
-        x: { ticks: { color: '#6b7280' }, grid: { display: false } },
-        y: {
-          ticks: {
-            color: '#6b7280',
-            callback: function(value) {
-              let hh = Math.floor(value / 60), mm = Math.round(value % 60);
-              let ampm = hh < 12 ? 'AM' : 'PM';
-              let disp = hh % 12 || 12;
-              return disp + ':' + String(mm).padStart(2,'0') + ' ' + ampm;
-            }
-          },
-          grid: { color: '#f1f5f9' }
-        }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } }
       }
-    }
+    });
   });
 </script>
 {% endblock %}

@@ -19,6 +19,8 @@ from database import (
     get_teacher_attendance,
     record_check_in,
     get_progress_stats,
+    get_session_progress_totals,
+    get_monthly_progress_breakdown,
     get_monthly_trend,
     get_monthly_attendance_time_trend,
     get_all_teachers_average_trend,
@@ -412,19 +414,16 @@ def progress(request: Request):
 
     conn = get_db()
     stats = get_progress_stats(conn, user["email"])
-    trend_labels, trend_values = get_monthly_trend(conn, user["email"])
-    time_labels, time_values, time_display = get_monthly_attendance_time_trend(conn, user["email"])
+    session_totals = get_session_progress_totals(conn, user["email"])
+    monthly_breakdown = get_monthly_progress_breakdown(conn, user["email"])
     conn.close()
 
     return templates.TemplateResponse("progress.html", {
         "request": request,
         "user": user,
         "stats": stats,
-        "trend_labels": trend_labels,
-        "trend_values": trend_values,
-        "time_labels": time_labels,
-        "time_values": time_values,
-        "time_display": time_display,
+        "session_totals": session_totals,
+        "monthly_breakdown": monthly_breakdown,
     })
 
 

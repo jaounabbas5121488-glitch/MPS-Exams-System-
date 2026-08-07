@@ -253,6 +253,58 @@ def get_progress_stats(conn, teacher_email: str, year: int | None = None, month:
     }
 
 
+def get_session_progress_totals(conn, teacher_email: str) -> dict:
+    """
+    Fixed, always-accumulating totals for the WHOLE session so far
+    (SESSION_START -> today) -- for the "Total Session" pie chart. This
+    never resets and never shrinks; it only grows as the session goes on.
+    """
+    today = date.today()
+    start = SESSION_START
+
+    if today < start:
+        total_open_days = 0
+        present_days = 0
+    else:
+        total_open_days = conn.execute(
+            "SELECT COUNT(*) as c FROM school_calendar WHERE is_open = 1 AND date >= ? AND date <= ?",
+            (start.isoformat(), today.isoformat()),
+        ).fetchone()["c"]
+
+        present_days = conn.execute(
+            "SELECT COUNT(*) as c FROM attendance WHERE teacher_email = ? AND date >= ? AND date <= ?",
+            (teacher_email, start.isoformat(), today.isoformat()),
+        ).fetchone()["c"]
+
+    absent_days = max(total_open_days - present_days, 0)
+    attendance_rate = round((present_days / total_open_days) * 100, 1) if total_open_days else 0
+
+    return {
+        "total_open_days": total_open_days,
+        "present_days": present_days,
+        "absent_days": absent_days,
+        "attendance_rate": attendance_rate,
+    }
+
+
+def get_monthly_progress_breakdown(conn, teacher_email: str):
+    """
+    One entry per session month (present/absent/rate) -- used to draw one
+    pie chart per month. A new entry appears automatically once a new
+    month begins, exactly like the admin calendar's month-wise counter.
+    """
+    breakdown = []
+    for yy, mm in get_session_months():
+        stats = get_progress_stats(conn, teacher_email, yy, mm)
+        breakdown.append({
+            "month_name": stats["month_name"],
+            "present_days": stats["present_days"],
+            "absent_days": stats["absent_days"],
+            "attendance_rate": stats["attendance_rate"],
+        })
+    return breakdown
+
+
 def get_session_months(upto: date | None = None):
     """
     All (year, month) pairs from SESSION_START up to today -- grows by
