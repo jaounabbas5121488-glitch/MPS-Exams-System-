@@ -8,9 +8,8 @@ DB_PATH = "mps_exams.db"
 DEFAULT_CHECK_IN_TIME = "08:30"
 PKT = ZoneInfo("Asia/Karachi")
 
-# Academic session starts here. Everything (calendar defaults, monthly graphs)
-# is calculated relative to this date.
-SESSION_START = date(2026, 9, 1)
+# NOTE: there is no hardcoded session-start date anymore. The session's
+# first day is derived dynamically -- see get_session_start() below.
 
 
 def get_db():
@@ -124,6 +123,84 @@ def get_school_calendar_events(conn):
             "title": "Open" if row["is_open"] else "Off",
         })
     return events
+
+
+def get_session_start(conn) -> date | None:
+    """
+    The session's real start date -- the EARLIEST date the admin has ever
+    marked as an open school day. No hardcoding: if the first day ever
+    opened is 23 August, this returns 23 August. Returns None if no day
+    has been marked open yet (session hasn't effectively started).
+    """
+    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
+    if row and row["d"]:
+        return date.fromisoformat(row["d"])
+    return None
+
+
+def get_session_start(conn) -> date | None:
+    """
+    The session's real start date -- the EARLIEST date the admin has ever
+    marked as an open school day. No hardcoding: if the first day ever
+    opened is 23 August, this returns 23 August. Returns None if no day
+    has been marked open yet (session hasn't effectively started).
+    """
+    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
+    if row and row["d"]:
+        return date.fromisoformat(row["d"])
+    return None
+
+
+def get_session_start(conn) -> date | None:
+    """
+    The session's real start date -- the EARLIEST date the admin has ever
+    marked as an open school day. No hardcoding: if the first day ever
+    opened is 23 August, this returns 23 August. Returns None if no day
+    has been marked open yet (session hasn't effectively started).
+    """
+    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
+    if row and row["d"]:
+        return date.fromisoformat(row["d"])
+    return None
+
+
+def get_session_start(conn) -> date | None:
+    """
+    The session's real start date -- the EARLIEST date the admin has ever
+    marked as an open school day. No hardcoding: if the first day ever
+    opened is 23 August, this returns 23 August. Returns None if no day
+    has been marked open yet (session hasn't effectively started).
+    """
+    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
+    if row and row["d"]:
+        return date.fromisoformat(row["d"])
+    return None
+
+
+def get_session_start(conn) -> date | None:
+    """
+    The session's real start date -- the EARLIEST date the admin has ever
+    marked as an open school day. No hardcoding: if the first day ever
+    opened is 23 August, this returns 23 August. Returns None if no day
+    has been marked open yet (session hasn't effectively started).
+    """
+    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
+    if row and row["d"]:
+        return date.fromisoformat(row["d"])
+    return None
+
+
+def get_session_start(conn) -> date | None:
+    """
+    The session's real start date -- the EARLIEST date the admin has ever
+    marked as an open school day. No hardcoding: if the first day ever
+    opened is 23 August, this returns 23 August. Returns None if no day
+    has been marked open yet (session hasn't effectively started).
+    """
+    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
+    if row and row["d"]:
+        return date.fromisoformat(row["d"])
+    return None
 
 
 def count_total_open_days_marked(conn, start: date | None = None, end: date | None = None) -> int:
@@ -260,9 +337,9 @@ def get_session_progress_totals(conn, teacher_email: str) -> dict:
     never resets and never shrinks; it only grows as the session goes on.
     """
     today = date.today()
-    start = SESSION_START
+    start = get_session_start(conn)
 
-    if today < start:
+    if start is None or today < start:
         total_open_days = 0
         present_days = 0
     else:
@@ -294,7 +371,7 @@ def get_monthly_progress_breakdown(conn, teacher_email: str):
     month begins, exactly like the admin calendar's month-wise counter.
     """
     breakdown = []
-    for yy, mm in get_session_months():
+    for yy, mm in get_session_months(conn):
         stats = get_progress_stats(conn, teacher_email, yy, mm)
         breakdown.append({
             "month_name": stats["month_name"],
@@ -305,16 +382,21 @@ def get_monthly_progress_breakdown(conn, teacher_email: str):
     return breakdown
 
 
-def get_session_months(upto: date | None = None):
+def get_session_months(conn, upto: date | None = None):
     """
-    All (year, month) pairs from SESSION_START up to today -- grows by
-    itself every time a new month begins. Nothing to configure manually.
+    All (year, month) pairs from the session's REAL start (earliest date
+    ever marked open by the admin) up to today. Grows by itself every time
+    a new month begins. Returns an empty list if no day has been opened
+    yet at all.
     """
+    session_start = get_session_start(conn)
+    if session_start is None:
+        return []
     upto = upto or date.today()
-    if (upto.year, upto.month) < (SESSION_START.year, SESSION_START.month):
-        return [(SESSION_START.year, SESSION_START.month)]
+    if (upto.year, upto.month) < (session_start.year, session_start.month):
+        return [(session_start.year, session_start.month)]
     months = []
-    y, m = SESSION_START.year, SESSION_START.month
+    y, m = session_start.year, session_start.month
     while (y, m) <= (upto.year, upto.month):
         months.append((y, m))
         m += 1
@@ -330,7 +412,7 @@ def get_monthly_trend(conn, teacher_email: str):
     month). A new bar/point appears automatically once a new month starts.
     """
     labels, rates = [], []
-    for yy, mm in get_session_months():
+    for yy, mm in get_session_months(conn):
         stats = get_progress_stats(conn, teacher_email, yy, mm)
         labels.append(stats["month_name"])
         rates.append(stats["attendance_rate"])
@@ -343,7 +425,7 @@ def get_monthly_attendance_time_trend(conn, teacher_email: str):
     human-readable version) for every month of the session so far.
     """
     labels, avg_minutes, avg_display = [], [], []
-    for yy, mm in get_session_months():
+    for yy, mm in get_session_months(conn):
         label = date(yy, mm, 1).strftime("%b %Y")
         month_start = date(yy, mm, 1).isoformat()
         _, dim = monthrange(yy, mm)

@@ -318,8 +318,8 @@ def admin_teacher_reports(teacher_id: int, request: Request, year: int | None = 
         raise HTTPException(status_code=404, detail="Teacher not found")
 
     stats = get_progress_stats(conn, teacher["email"], year, month)
-    trend_labels, trend_values = get_monthly_trend(conn, teacher["email"])
-    time_labels, time_values, time_display = get_monthly_attendance_time_trend(conn, teacher["email"])
+    session_totals = get_session_progress_totals(conn, teacher["email"])
+    monthly_breakdown = get_monthly_progress_breakdown(conn, teacher["email"])
     conn.close()
 
     prev_year, prev_month = shift_month(stats["year"], stats["month"], -1)
@@ -330,11 +330,8 @@ def admin_teacher_reports(teacher_id: int, request: Request, year: int | None = 
         "user": user,
         "teacher": teacher,
         "stats": stats,
-        "trend_labels": trend_labels,
-        "trend_values": trend_values,
-        "time_labels": time_labels,
-        "time_values": time_values,
-        "time_display": time_display,
+        "session_totals": session_totals,
+        "monthly_breakdown": monthly_breakdown,
         "prev_year": prev_year,
         "prev_month": prev_month,
         "next_year": next_year,
