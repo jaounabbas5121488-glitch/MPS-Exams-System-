@@ -83,11 +83,12 @@
   <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
     <div>
       <h2 class="text-lg font-bold flex items-center gap-2">🗓️ Academic Calendar — Session 2026-27</h2>
-      <p class="text-sm text-slate-400 mt-1">Click a date to toggle it, or drag across dates to mark a range open. Nothing is applied until you click "Save Calendar Changes".</p>
+      <p class="text-sm text-slate-400 mt-1">Date(s) pe click/drag karke select karo (blue outline), phir "School On" ya "School Off" button dabao. Kuch bhi apply nahi hoga jab tak "Save Calendar Changes" na dabao.</p>
     </div>
-    <div class="flex items-center gap-4 text-xs">
+    <div class="flex items-center gap-4 text-xs flex-wrap">
       <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-500 inline-block"></span> Open Day (saved)</span>
       <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-slate-700 inline-block"></span> Off Day (saved)</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded border-2 border-dashed border-sky-400 inline-block"></span> Selected (status pick karo)</span>
       <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded border-2 border-dashed border-amber-400 inline-block"></span> Pending (unsaved)</span>
     </div>
   </div>
@@ -103,7 +104,21 @@
 
   <div id="school-calendar" class="rounded-2xl overflow-hidden border border-slate-800"></div>
 
-  <div class="flex items-center justify-between mt-5 pt-4 border-t border-slate-800">
+  <div class="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-800">
+    <span id="picked-count" class="text-xs text-slate-400">0 dates selected</span>
+    <div class="flex items-center gap-3">
+      <button id="mark-open-btn" type="button"
+        class="bg-emerald-600/90 hover:bg-emerald-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition shadow">
+        ✅ School On
+      </button>
+      <button id="mark-closed-btn" type="button"
+        class="bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition shadow">
+        🚫 School Off
+      </button>
+    </div>
+  </div>
+
+  <div class="flex items-center justify-between mt-4 pt-4 border-t border-slate-800">
     <span id="selected-count" class="text-xs text-slate-400">0 dates changed (unsaved)</span>
     <button id="save-calendar-btn"
       class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition shadow-lg shadow-emerald-900/20">
@@ -268,22 +283,12 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
 
-  // changedDates holds ONLY unsaved, staged toggles the admin has made in
-  // this page load: { "YYYY-MM-DD": true|false }. It is intentionally kept
-  // separate from savedOpenDates (truth from the server) so that nothing
-  // the admin clicks affects any visible total until "Save Calendar
-  // Changes" is pressed and the page reloads with the real, persisted data.
-  const changedDates = {};
+  const changedDates = {};          // staged, unsaved On/Off decisions: { "YYYY-MM-DD": true|false }
+  const selectedDates = new Set();  // dates jo mouse se pick ki gayi hain, status button ka intezaar
   let savedOpenDates = new Set();
   let currentViewStart = null;
   let currentViewEnd = null;
 
-  // Build a YYYY-MM-DD string from a Date's LOCAL calendar fields.
-  // Using toISOString() here was the root cause of most of the old bugs:
-  // it converts to UTC first, which silently shifts the date backward by
-  // one day for any timezone ahead of UTC (e.g. Pakistan, UTC+5). That
-  // mismatch is what made a single click appear to affect two different
-  // dates, and made "phantom" open days show up.
   function toDateStr(d) {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -291,19 +296,10 @@ document.addEventListener('DOMContentLoaded', function () {
     return `${y}-${m}-${day}`;
   }
 
-  // Single source of truth for "is this date currently open" -- checks the
-  // staged change first, falls back to the saved/server state. Never reads
-  // from the DOM, which is what caused the old dateClick toggle bug.
-  function isDateOpen(dateStr) {
-    if (Object.prototype.hasOwnProperty.call(changedDates, dateStr)) {
-      return changedDates[dateStr];
-    }
-    return savedOpenDates.has(dateStr);
+  function cellFor(dateStr) {
+    return document.querySelector('#school-calendar [data-date="' + dateStr + '"]');
   }
 
-  // "This month" counter is computed ONLY from savedOpenDates (server
-  // truth). It never reacts to clicks -- only to navigating months or to a
-  // successful save (which reloads the page).
   function recomputeMonthCount() {
     if (!currentViewStart || !currentViewEnd) return;
     let count = 0;
@@ -316,12 +312,37 @@ document.addEventListener('DOMContentLoaded', function () {
     if (el) el.innerText = 'This month (saved): ' + count + ' open days';
   }
 
+  // Staged status (green = will be Open, red = will be Off) -- shown ONLY
+  // after a School On/Off button press, never on plain selection.
   function markPending(dateStr, willBeOpen) {
-    const cell = document.querySelector('#school-calendar [data-date="' + dateStr + '"]');
+    const cell = cellFor(dateStr);
     if (!cell) return;
     cell.classList.add('pending-change');
     cell.style.outline = willBeOpen ? '3px dashed #34d399' : '3px dashed #fb7185';
     cell.style.outlineOffset = '-3px';
+  }
+
+  // Neutral "picked" outline -- doesn't mean open OR closed, just "chosen,
+  // waiting for you to press a button".
+  function toggleSelectVisual(dateStr, isSelected) {
+    const cell = cellFor(dateStr);
+    if (!cell) return;
+    if (isSelected) {
+      cell.style.outline = '3px dashed #38bdf8';
+      cell.style.outlineOffset = '-3px';
+    } else if (!cell.classList.contains('pending-change')) {
+      cell.style.outline = '';
+    }
+  }
+
+  function updatePickedCount() {
+    const n = selectedDates.size;
+    document.getElementById('picked-count').innerText = n + ' date' + (n === 1 ? '' : 's') + ' selected';
+  }
+
+  function updateChangedCount() {
+    const n = Object.keys(changedDates).length;
+    document.getElementById('selected-count').innerText = n + ' date' + (n === 1 ? '' : 's') + ' changed (unsaved)';
   }
 
   fetch('/admin/calendar/school-days')
@@ -349,28 +370,35 @@ document.addEventListener('DOMContentLoaded', function () {
         recomputeMonthCount();
       },
 
-      // Dragging a range always stages it as OPEN (this is the "quickly
-      // mark a whole week/term as school days" gesture).
+      // Drag across days -> add all of them to the selection (does NOT
+      // set their status by itself).
       select: function (info) {
         let current = new Date(info.start);
         while (current < info.end) {
           const dateStr = toDateStr(current);
-          changedDates[dateStr] = true;
-          markPending(dateStr, true);
+          if (!selectedDates.has(dateStr)) {
+            selectedDates.add(dateStr);
+            toggleSelectVisual(dateStr, true);
+          }
           current.setDate(current.getDate() + 1);
         }
         calendar.unselect();
-        updateCounter();
+        updatePickedCount();
       },
 
-      // A single click TOGGLES that one date, based on the true current
-      // state (staged-or-saved), not on any CSS class.
+      // A single click only SELECTS/DESELECTS a date -- it never flips
+      // its open/closed status on its own anymore. Status is only ever
+      // set by the School On / School Off buttons below the calendar.
       dateClick: function (info) {
         const dateStr = info.dateStr;
-        const willBeOpen = !isDateOpen(dateStr);
-        changedDates[dateStr] = willBeOpen;
-        markPending(dateStr, willBeOpen);
-        updateCounter();
+        if (selectedDates.has(dateStr)) {
+          selectedDates.delete(dateStr);
+          toggleSelectVisual(dateStr, false);
+        } else {
+          selectedDates.add(dateStr);
+          toggleSelectVisual(dateStr, true);
+        }
+        updatePickedCount();
       }
     });
     calendar.render();
@@ -379,14 +407,31 @@ document.addEventListener('DOMContentLoaded', function () {
     recomputeMonthCount();
   }
 
-  function updateCounter() {
-    const n = Object.keys(changedDates).length;
-    document.getElementById('selected-count').innerText = n + ' date' + (n === 1 ? '' : 's') + ' changed (unsaved)';
+  function applyStatusToSelection(willBeOpen) {
+    if (selectedDates.size === 0) {
+      alert('Pehle calendar se ek ya zyada dates select karo.');
+      return;
+    }
+    selectedDates.forEach(dateStr => {
+      changedDates[dateStr] = willBeOpen;
+      markPending(dateStr, willBeOpen);
+    });
+    selectedDates.clear();
+    updatePickedCount();
+    updateChangedCount();
   }
+
+  document.getElementById('mark-open-btn').addEventListener('click', function () {
+    applyStatusToSelection(true);
+  });
+
+  document.getElementById('mark-closed-btn').addEventListener('click', function () {
+    applyStatusToSelection(false);
+  });
 
   document.getElementById('save-calendar-btn').addEventListener('click', function () {
     if (Object.keys(changedDates).length === 0) {
-      alert('No changes to save yet -- click a date first.');
+      alert('Abhi save karne ke liye kuch nahi hai -- pehle date select karo aur School On/Off dabao.');
       return;
     }
     fetch('/admin/calendar/school-days', {
@@ -397,9 +442,6 @@ document.addEventListener('DOMContentLoaded', function () {
     .then(res => res.json())
     .then(data => {
       if (data.success) {
-        // Reload so every number on the page (this month, total session
-        // days, today's status, teacher attendance table, charts) comes
-        // fresh from the database -- no client-side guessing.
         window.location.reload();
       } else {
         alert('Could not save calendar. Try again.');
