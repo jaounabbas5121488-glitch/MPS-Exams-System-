@@ -760,7 +760,7 @@ def marks_entry_grid(request: Request, session_subject_id: int):
     extra_columns = json.loads(tpl["extra_columns"]) if tpl else []
     identity_columns = json.loads(tpl["identity_columns"]) if tpl else ["Name", "Father Name"]
 
-    students = conn.execute("""
+    students_raw = conn.execute("""
         SELECT sr.*, em.marks_obtained as mark
         FROM student_records sr
         LEFT JOIN exam_marks em ON em.student_id = sr.id
@@ -770,6 +770,17 @@ def marks_entry_grid(request: Request, session_subject_id: int):
     """, (session_subject_id, ss["class_id"])).fetchall()
 
     conn.close()
+
+    # Parse extra_data from JSON string to dict for each student
+    students = []
+    for s in students_raw:
+        s_dict = dict(s)
+        try:
+            s_dict['extra_data'] = json.loads(s_dict['extra_data']) if s_dict['extra_data'] else {}
+        except (json.JSONDecodeError, TypeError):
+            s_dict['extra_data'] = {}
+        students.append(s_dict)
+
     return templates.TemplateResponse("teacher_exam_marks_grid.html", {
         "request": request,
         "user": user,
@@ -783,7 +794,6 @@ def marks_entry_grid(request: Request, session_subject_id: int):
         "students": students,
         "extra_columns": extra_columns,
     })
-
 
 @app.post("/test-marks/save-new")
 async def save_marks_new(request: Request):
