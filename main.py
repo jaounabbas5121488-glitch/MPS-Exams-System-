@@ -577,16 +577,17 @@ def admin_students_process(
 def admin_master_data(request: Request):
     user = require_admin(request)
     conn = get_db()
+    classes = conn.execute("SELECT * FROM classes ORDER BY name").fetchall()
     subjects = conn.execute("SELECT * FROM subjects ORDER BY name").fetchall()
     test_types = conn.execute("SELECT * FROM test_types ORDER BY name").fetchall()
     conn.close()
     return templates.TemplateResponse("admin_master_data.html", {
         "request": request,
         "user": user,
+        "classes": classes,
         "subjects": subjects,
         "test_types": test_types,
     })
-
 
 @app.post("/admin/master-data/add/subject")
 def add_subject(request: Request, name: str = Form(...)):
@@ -632,7 +633,26 @@ def delete_test_type(test_type_id: int, request: Request):
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin/master-data", status_code=303)
+@app.post("/admin/master-data/add/class")
+def add_class(request: Request, name: str = Form(...)):
+    user = require_admin(request)
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO classes (name) VALUES (?)", (name.strip(),))
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return RedirectResponse(url="/admin/master-data", status_code=303)
 
+@app.post("/admin/master-data/delete/class/{class_id}")
+def delete_class(class_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/master-data", status_code=303)
 
 # ===================== ADMIN EXAM SESSIONS =====================
 @app.get("/admin/exam-sessions", response_class=HTMLResponse)

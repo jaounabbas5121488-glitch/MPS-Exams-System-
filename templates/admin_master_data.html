@@ -5,10 +5,29 @@
 {% block content %}
 <div class="mb-8 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white">
   <h1 class="text-3xl font-extrabold">🗂️ Master Data</h1>
-  <p class="text-slate-400 text-sm mt-2">Manage Subjects and Test Types used across the system.</p>
+  <p class="text-slate-400 text-sm mt-2">Manage Classes, Subjects, and Test Types used across the system.</p>
 </div>
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+  <!-- Classes -->
+  <div class="bg-white rounded-2xl shadow p-6">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">🏫 Classes</h2>
+    <ul class="divide-y divide-gray-200 mb-4">
+      {% for cls in classes %}
+      <li class="py-2 flex justify-between items-center">
+        <span>{{ cls.name }}</span>
+        <form method="post" action="/admin/master-data/delete/class/{{ cls.id }}" onsubmit="return confirm('Delete this class?')">
+          <button class="text-red-500 hover:text-red-700 text-sm">✕</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="/admin/master-data/add/class" class="flex gap-2">
+      <input type="text" name="name" placeholder="e.g. Class 5 - Girls" required class="flex-1 border rounded-lg px-3 py-2 text-sm">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">Add</button>
+    </form>
+  </div>
 
   <!-- Subjects -->
   <div class="bg-white rounded-2xl shadow p-6">
@@ -30,7 +49,7 @@
   </div>
 
   <!-- Test Types -->
-  <div class="bg-white rounded-2xl shadow p-6">
+  <div class="bg-white rounded-2xl shadow p-6 md:col-span-2">
     <h2 class="text-xl font-bold text-gray-800 mb-4">📝 Test Types</h2>
     <ul class="divide-y divide-gray-200 mb-4">
       {% for tt in test_types %}
