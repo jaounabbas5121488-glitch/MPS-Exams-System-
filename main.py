@@ -401,29 +401,6 @@ def profile(request: Request):
     return templates.TemplateResponse("profile.html", {"request": request, "user": user})
 
 
-@app.get("/progress", response_class=HTMLResponse)
-def progress(request: Request):
-    user = current_user(request)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
-    if user.get("role") == "admin":
-        return RedirectResponse(url="/admin", status_code=303)
-
-    conn = get_db()
-    stats = get_progress_stats(conn, user["email"])
-    session_totals = get_session_progress_totals(conn, user["email"])
-    monthly_breakdown = get_monthly_progress_breakdown(conn, user["email"])
-    conn.close()
-
-    return templates.TemplateResponse("progress.html", {
-        "request": request,
-        "user": user,
-        "stats": stats,
-        "session_totals": session_totals,
-        "monthly_breakdown": monthly_breakdown,
-    })
-
-
 # ===================== ADMIN STUDENT MANAGEMENT (NEW) =====================
 @app.get("/admin/students", response_class=HTMLResponse)
 def admin_students(request: Request):
@@ -822,6 +799,11 @@ async def save_marks_new(request: Request):
         conn.close()
         return RedirectResponse(url="/test-marks?error=not_found", status_code=303)
 
+    # If teacher_email is still empty, assign the current teacher as the one who submitted
+    if not ss["teacher_email"] or ss["teacher_email"].strip() == "":
+        conn.execute("UPDATE exam_session_subjects SET teacher_email = ? WHERE id = ?",
+                     (user["email"], session_subject_id))
+
     conn.execute("DELETE FROM exam_marks WHERE session_subject_id = ?", (session_subject_id,))
 
     for key in form.keys():
@@ -839,7 +821,7 @@ async def save_marks_new(request: Request):
     return RedirectResponse(url=f"/test-marks?msg=saved&session_id={session_id}", status_code=303)
 
 
-# ===================== ADMIN EXAM STATUS & CONFIRMATION =====================
+# ===================== ADMIN EXAM STATUS & CONFIRMATION (WITH RESULT SUMMARY) =====================
 @app.get("/admin/exam-status", response_class=HTMLResponse)
 def admin_exam_status(request: Request):
     user = require_admin(request)
@@ -871,11 +853,94 @@ def admin_exam_status(request: Request):
     })
 
 
+def compute_and_store_summary(conn, session_id):
+    """Calculate overall and per-subject pass/fail, store in session_result_summary."""
+    # Get session info
+    session = conn.execute("SELECT * FROM exam_sessions WHERE id = ?", (session_id,)).fetchone()
+    if not session:
+        return
+    class_id = session["class_id"]
+
+    # Get all subjects for this session
+    subjects = conn.execute("SELECT * FROM exam_session_subjects WHERE session_id = ?", (session_id,)).fetchall()
+    if not subjects:
+        return
+
+    # Get all students in this class (from student_records)
+    students = conn.execute("SELECT * FROM student_records WHERE class_id = ?", (class_id,)).fetchall()
+    total_students = len(students)
+
+    subject_details = {}
+    overall_pass = 0
+    overall_fail = 0
+
+    for student in students:
+        student_total_obtained = 0
+        student_sum_passing = 0
+        for subj in subjects:
+            # Get mark
+            mark_row = conn.execute("""
+                SELECT marks_obtained FROM exam_marks
+                WHERE session_subject_id = ? AND student_id = ?
+            """, (subj["id"], student["id"])).fetchone()
+            obtained = mark_row["marks_obtained"] if mark_row and mark_row["marks_obtained"] is not None else 0
+            total_marks = subj["total_marks"]
+            passing_marks = subj["passing_marks"]
+
+            student_total_obtained += obtained
+            student_sum_passing += passing_marks
+
+            # Per-subject pass/fail
+            key = str(subj["id"])
+            if key not in subject_details:
+                subject_details[key] = {
+                    "subject_id": subj["subject_id"],
+                    "subject_name": "",
+                    "teacher_email": subj["teacher_email"],
+                    "teacher_name": "",
+                    "pass_count": 0,
+                    "fail_count": 0,
+                    "total_marks": total_marks,
+                    "passing_marks": passing_marks
+                }
+                # get subject name
+                subj_name_row = conn.execute("SELECT name FROM subjects WHERE id = ?", (subj["subject_id"],)).fetchone()
+                if subj_name_row:
+                    subject_details[key]["subject_name"] = subj_name_row["name"]
+                # get teacher name
+                if subj["teacher_email"]:
+                    teacher_row = conn.execute("SELECT full_name FROM users WHERE email = ?", (subj["teacher_email"],)).fetchone()
+                    if teacher_row:
+                        subject_details[key]["teacher_name"] = teacher_row["full_name"]
+
+            if obtained >= passing_marks:
+                subject_details[key]["pass_count"] += 1
+            else:
+                subject_details[key]["fail_count"] += 1
+
+        if student_total_obtained >= student_sum_passing:
+            overall_pass += 1
+        else:
+            overall_fail += 1
+
+    # Convert subject_details values to list for JSON storage
+    subject_list = list(subject_details.values())
+
+    # Delete old summary if exists
+    conn.execute("DELETE FROM session_result_summary WHERE session_id = ?", (session_id,))
+    conn.execute("""
+        INSERT INTO session_result_summary (session_id, class_id, overall_pass_count, overall_fail_count, total_students, subject_details)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (session_id, class_id, overall_pass, overall_fail, total_students, json.dumps(subject_list)))
+
+
 @app.post("/admin/exam-status/confirm/{session_id}")
 def confirm_result(session_id: int, request: Request):
     user = require_admin(request)
     conn = get_db()
     conn.execute("UPDATE exam_sessions SET status = 'confirmed' WHERE id = ?", (session_id,))
+    # Compute and store result summary
+    compute_and_store_summary(conn, session_id)
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin/exam-status?msg=confirmed", status_code=303)
@@ -886,9 +951,102 @@ def reopen_session(session_id: int, request: Request):
     user = require_admin(request)
     conn = get_db()
     conn.execute("UPDATE exam_sessions SET status = 'open' WHERE id = ?", (session_id,))
+    # Optional: remove summary when reopening? We'll keep it but it will be recalculated on next confirm.
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin/exam-status?msg=reopened", status_code=303)
+
+
+# ===================== ADMIN EXAM CHARTS PAGE =====================
+@app.get("/admin/exam-session/{session_id}/charts", response_class=HTMLResponse)
+def admin_session_charts(session_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    session = conn.execute("""
+        SELECT es.*, c.name as class_name
+        FROM exam_sessions es JOIN classes c ON c.id = es.class_id
+        WHERE es.id = ?
+    """, (session_id,)).fetchone()
+    if not session:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    summary = conn.execute("SELECT * FROM session_result_summary WHERE session_id = ?", (session_id,)).fetchone()
+    if not summary:
+        conn.close()
+        return RedirectResponse(url="/admin/exam-status?error=no_summary", status_code=303)
+
+    subject_details = json.loads(summary["subject_details"])
+    overall = {
+        "pass": summary["overall_pass_count"],
+        "fail": summary["overall_fail_count"],
+        "total": summary["total_students"]
+    }
+    conn.close()
+    return templates.TemplateResponse("admin_session_charts.html", {
+        "request": request,
+        "user": user,
+        "session": dict(session),
+        "overall": overall,
+        "subjects": subject_details,
+    })
+
+
+# ===================== TEACHER PROGRESS (with exam charts) =====================
+@app.get("/progress", response_class=HTMLResponse)
+def progress(request: Request):
+    user = require_login(request)
+    if user.get("role") == "admin":
+        return RedirectResponse(url="/admin", status_code=303)
+
+    conn = get_db()
+    stats = get_progress_stats(conn, user["email"])
+    session_totals = get_session_progress_totals(conn, user["email"])
+    monthly_breakdown = get_monthly_progress_breakdown(conn, user["email"])
+
+    # Exam results for this teacher (confirmed sessions where teacher_email matches)
+    exam_results = []
+    # Get distinct confirmed sessions where this teacher is in exam_session_subjects
+    sessions = conn.execute("""
+        SELECT DISTINCT es.id, es.test_number, es.conduct_date,
+               c.name as class_name, tt.name as test_type_name
+        FROM exam_sessions es
+        JOIN exam_session_subjects ess ON ess.session_id = es.id
+        JOIN classes c ON c.id = es.class_id
+        JOIN test_types tt ON tt.id = es.test_type_id
+        WHERE ess.teacher_email = ? AND es.status = 'confirmed'
+        ORDER BY es.conduct_date DESC
+    """, (user["email"],)).fetchall()
+
+    for sess in sessions:
+        # For each session, get the summary if exists, else skip
+        summary = conn.execute("SELECT * FROM session_result_summary WHERE session_id = ?", (sess["id"],)).fetchone()
+        if not summary:
+            continue
+        # Filter subject_details to include only those where teacher_email matches
+        all_subjects = json.loads(summary["subject_details"])
+        my_subjects = [s for s in all_subjects if s["teacher_email"] == user["email"]]
+        if not my_subjects:
+            continue
+        exam_results.append({
+            "session_id": sess["id"],
+            "class_name": sess["class_name"],
+            "test_type_name": sess["test_type_name"],
+            "test_number": sess["test_number"],
+            "conduct_date": sess["conduct_date"],
+            "subjects": my_subjects
+        })
+
+    conn.close()
+
+    return templates.TemplateResponse("progress.html", {
+        "request": request,
+        "user": user,
+        "stats": stats,
+        "session_totals": session_totals,
+        "monthly_breakdown": monthly_breakdown,
+        "exam_results": exam_results,
+    })
 
 
 # ===================== ADMIN EXPORT SESSION EXCEL =====================

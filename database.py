@@ -138,71 +138,6 @@ def get_session_start(conn) -> date | None:
     return None
 
 
-def get_session_start(conn) -> date | None:
-    """
-    The session's real start date -- the EARLIEST date the admin has ever
-    marked as an open school day. No hardcoding: if the first day ever
-    opened is 23 August, this returns 23 August. Returns None if no day
-    has been marked open yet (session hasn't effectively started).
-    """
-    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
-    if row and row["d"]:
-        return date.fromisoformat(row["d"])
-    return None
-
-
-def get_session_start(conn) -> date | None:
-    """
-    The session's real start date -- the EARLIEST date the admin has ever
-    marked as an open school day. No hardcoding: if the first day ever
-    opened is 23 August, this returns 23 August. Returns None if no day
-    has been marked open yet (session hasn't effectively started).
-    """
-    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
-    if row and row["d"]:
-        return date.fromisoformat(row["d"])
-    return None
-
-
-def get_session_start(conn) -> date | None:
-    """
-    The session's real start date -- the EARLIEST date the admin has ever
-    marked as an open school day. No hardcoding: if the first day ever
-    opened is 23 August, this returns 23 August. Returns None if no day
-    has been marked open yet (session hasn't effectively started).
-    """
-    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
-    if row and row["d"]:
-        return date.fromisoformat(row["d"])
-    return None
-
-
-def get_session_start(conn) -> date | None:
-    """
-    The session's real start date -- the EARLIEST date the admin has ever
-    marked as an open school day. No hardcoding: if the first day ever
-    opened is 23 August, this returns 23 August. Returns None if no day
-    has been marked open yet (session hasn't effectively started).
-    """
-    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
-    if row and row["d"]:
-        return date.fromisoformat(row["d"])
-    return None
-
-
-def get_session_start(conn) -> date | None:
-    """
-    The session's real start date -- the EARLIEST date the admin has ever
-    marked as an open school day. No hardcoding: if the first day ever
-    opened is 23 August, this returns 23 August. Returns None if no day
-    has been marked open yet (session hasn't effectively started).
-    """
-    row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
-    if row and row["d"]:
-        return date.fromisoformat(row["d"])
-    return None
-
-
 def count_total_open_days_marked(conn, start: date | None = None, end: date | None = None) -> int:
     """
     Total school-open days marked -- every date in school_calendar with
@@ -643,6 +578,21 @@ def init_db():
             father_name TEXT NOT NULL,
             extra_data TEXT NOT NULL DEFAULT '{}',
             UNIQUE(class_id, name, father_name),
+            FOREIGN KEY (class_id) REFERENCES classes(id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS session_result_summary (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            class_id INTEGER NOT NULL,
+            overall_pass_count INTEGER NOT NULL DEFAULT 0,
+            overall_fail_count INTEGER NOT NULL DEFAULT 0,
+            total_students INTEGER NOT NULL DEFAULT 0,
+            subject_details TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (session_id) REFERENCES exam_sessions(id),
             FOREIGN KEY (class_id) REFERENCES classes(id)
         )
     """)
