@@ -582,6 +582,72 @@ def init_db():
             UNIQUE(teacher_email, date, class_id, subject_id, test_type_id, student_id)
         )
     """)
+        # ------------------------------------------------------------
+    # NEW TABLES FOR EXAM MARKS SYSTEM
+    # ------------------------------------------------------------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS exam_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id INTEGER NOT NULL,
+            test_type_id INTEGER NOT NULL,
+            test_number TEXT NOT NULL,
+            conduct_date TEXT NOT NULL,
+            syllabus TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (class_id) REFERENCES classes(id),
+            FOREIGN KEY (test_type_id) REFERENCES test_types(id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS exam_session_subjects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            subject_id INTEGER NOT NULL,
+            teacher_email TEXT NOT NULL,
+            total_marks REAL NOT NULL,
+            passing_marks REAL NOT NULL DEFAULT 0,
+            submitted INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (session_id) REFERENCES exam_sessions(id),
+            FOREIGN KEY (subject_id) REFERENCES subjects(id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS exam_marks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_subject_id INTEGER NOT NULL,
+            student_id INTEGER NOT NULL,
+            marks_obtained REAL,
+            FOREIGN KEY (session_subject_id) REFERENCES exam_session_subjects(id),
+            FOREIGN KEY (student_id) REFERENCES students(id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS class_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id INTEGER NOT NULL UNIQUE,
+            template_filename TEXT NOT NULL,
+            identity_columns TEXT NOT NULL DEFAULT '[]',
+            extra_columns TEXT NOT NULL DEFAULT '[]',
+            FOREIGN KEY (class_id) REFERENCES classes(id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS student_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            father_name TEXT NOT NULL,
+            extra_data TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(class_id, name, father_name),
+            FOREIGN KEY (class_id) REFERENCES classes(id)
+        )
+    """)
+    # ------------------------------------------------------------
 
     if not get_setting(conn, "official_check_in_time"):
         set_setting(conn, "official_check_in_time", DEFAULT_CHECK_IN_TIME)

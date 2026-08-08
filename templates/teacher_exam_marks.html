@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Enter Exam Marks{% endblock %}
+{% block main_class %}max-w-5xl mx-auto px-4 py-8{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/dashboard" class="text-blue-600 text-sm hover:underline flex items-center gap-1">← Back to Dashboard</a>
+</div>
+
+<div class="bg-white rounded-2xl shadow p-6 mb-6">
+  <h1 class="text-2xl font-bold text-gray-800 mb-1">📝 Enter Marks</h1>
+  <p class="text-sm text-gray-500">Select a session and your subject to start marking.</p>
+</div>
+
+{% set msg = request.query_params.get("msg") %}
+{% if msg == "saved" %}
+<div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">✅ Marks saved successfully.</div>
+{% endif %}
+
+<!-- Step 1: Choose session (only sessions where teacher has a subject) -->
+<form method="get" action="/test-marks" class="bg-white rounded-2xl shadow p-6 mb-6">
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Select Exam Session</label>
+      <select name="session_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" onchange="this.form.submit()">
+        <option value="">-- Choose a session --</option>
+        {% for s in sessions %}
+        <option value="{{ s.id }}" {% if selected_session_id == s.id %}selected{% endif %}>
+          {{ s.class_name }} - {{ s.test_type_name }} {{ s.test_number }} ({{ s.conduct_date }})
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</form>
+
+{% if selected_session_id %}
+<!-- Step 2: Show subjects assigned to this teacher for this session -->
+<div class="bg-white rounded-2xl shadow p-6 mb-6">
+  <h2 class="text-lg font-semibold text-gray-800 mb-3">Your Subjects in this Session</h2>
+  {% if session_subjects %}
+  <div class="space-y-3">
+    {% for subj in session_subjects %}
+    <div class="border rounded-lg p-4 flex items-center justify-between">
+      <div>
+        <span class="font-medium">{{ subj.subject_name }}</span>
+        <span class="text-sm text-gray-500 ml-3">Total: {{ subj.total_marks }} | Pass: {{ subj.passing_marks }}</span>
+        {% if subj.submitted %}
+        <span class="ml-3 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Submitted</span>
+        {% else %}
+        <span class="ml-3 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full">Pending</span>
+        {% endif %}
+      </div>
+      <a href="/test-marks/entry?session_subject_id={{ subj.id }}" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+        {% if subj.submitted %}Edit{% else %}Enter{% endif %} Marks
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-gray-500 text-sm">No subjects assigned to you for this session.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

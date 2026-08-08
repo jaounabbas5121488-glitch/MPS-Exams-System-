@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Mark Entry – {{ subject_name }}{% endblock %}
+{% block main_class %}max-w-5xl mx-auto px-4 py-8{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="/test-marks?session_id={{ session_id }}" class="text-blue-600 text-sm hover:underline">← Back to session</a>
+</div>
+
+<div class="bg-white rounded-2xl shadow p-6 mb-6">
+  <div class="flex justify-between items-center mb-4">
+    <div>
+      <h1 class="text-xl font-bold text-gray-800">{{ subject_name }}</h1>
+      <p class="text-sm text-gray-500">{{ class_name }} – {{ test_info }} | Total Marks: {{ total_marks }} | Pass: {{ passing_marks }}</p>
+    </div>
+    <div id="liveStats" class="text-right text-sm text-gray-700">
+      <div>Entered: <span id="enteredCount">0</span>/{{ students|length }}</div>
+      <div>Avg: <span id="avgMark">-</span></div>
+      <div>Pass: <span id="passCount">0</span> (≥{{ passing_marks }})</div>
+    </div>
+  </div>
+
+  <form method="post" action="/test-marks/save-new" id="marksForm">
+    <input type="hidden" name="session_subject_id" value="{{ session_subject_id }}">
+    <input type="hidden" name="session_id" value="{{ session_id }}">
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm border rounded-lg">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-2 text-left">#</th>
+            {% for col in extra_columns %}
+            <th class="px-4 py-2 text-left">{{ col }}</th>
+            {% endfor %}
+            <th class="px-4 py-2 text-left">Student Name</th>
+            <th class="px-4 py-2 text-left">Father Name</th>
+            <th class="px-4 py-2 text-left">Marks (out of {{ total_marks }})</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for student in students %}
+          <tr class="border-t">
+            <td class="px-4 py-2">{{ loop.index }}</td>
+            {% for col in extra_columns %}
+            <td class="px-4 py-2 text-gray-600">{{ student.extra_data.get(col, '') }}</td>
+            {% endfor %}
+            <td class="px-4 py-2 font-medium">{{ student.name }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ student.father_name }}</td>
+            <td class="px-4 py-2">
+              <input type="number" step="any" min="0" max="{{ total_marks }}"
+                name="mark_{{ student.id }}" value="{{ student.mark or '' }}"
+                class="w-24 border rounded px-2 py-1 text-sm mark-input" data-student-id="{{ student.id }}">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-5 flex gap-3">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-6 rounded-xl">Save Marks</button>
+    </div>
+  </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const totalMarks = {{ total_marks }};
+  const passingMarks = {{ passing_marks }};
+  const inputs = document.querySelectorAll('.mark-input');
+  const enteredSpan = document.getElementById('enteredCount');
+  const avgSpan = document.getElementById('avgMark');
+  const passSpan = document.getElementById('passCount');
+
+  function updateStats() {
+    let sum = 0, count = 0, pass = 0;
+    inputs.forEach(inp => {
+      const val = parseFloat(inp.value);
+      if (!isNaN(val)) {
+        sum += val;
+        count++;
+        if (val >= passingMarks) pass++;
+      }
+    });
+    enteredSpan.textContent = count;
+    avgSpan.textContent = count ? (sum / count).toFixed(1) : '-';
+    passSpan.textContent = pass;
+  }
+
+  inputs.forEach(inp => inp.addEventListener('input', updateStats));
+  updateStats();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Master Data – Admin{% endblock %}
+{% block main_class %}max-w-5xl mx-auto px-4 py-10{% endblock %}
+
+{% block content %}
+<div class="mb-8 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white">
+  <h1 class="text-3xl font-extrabold">🗂️ Master Data</h1>
+  <p class="text-slate-400 text-sm mt-2">Manage Subjects and Test Types used across the system.</p>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+  <!-- Subjects -->
+  <div class="bg-white rounded-2xl shadow p-6">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">📚 Subjects</h2>
+    <ul class="divide-y divide-gray-200 mb-4">
+      {% for subj in subjects %}
+      <li class="py-2 flex justify-between items-center">
+        <span>{{ subj.name }}</span>
+        <form method="post" action="/admin/master-data/delete/subject/{{ subj.id }}" onsubmit="return confirm('Delete this subject?')">
+          <button class="text-red-500 hover:text-red-700 text-sm">✕</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="/admin/master-data/add/subject" class="flex gap-2">
+      <input type="text" name="name" placeholder="New subject" required class="flex-1 border rounded-lg px-3 py-2 text-sm">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">Add</button>
+    </form>
+  </div>
+
+  <!-- Test Types -->
+  <div class="bg-white rounded-2xl shadow p-6">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">📝 Test Types</h2>
+    <ul class="divide-y divide-gray-200 mb-4">
+      {% for tt in test_types %}
+      <li class="py-2 flex justify-between items-center">
+        <span>{{ tt.name }}</span>
+        <form method="post" action="/admin/master-data/delete/test-type/{{ tt.id }}" onsubmit="return confirm('Delete this test type?')">
+          <button class="text-red-500 hover:text-red-700 text-sm">✕</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="/admin/master-data/add/test-type" class="flex gap-2">
+      <input type="text" name="name" placeholder="New test type" required class="flex-1 border rounded-lg px-3 py-2 text-sm">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">Add</button>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

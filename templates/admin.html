@@ -21,15 +21,6 @@
 {% endif %}
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
-
-  <!--
-    Today's status is now READ-ONLY. It is derived purely from the
-    Academic Calendar below -- there is no separate "Mark Open / Mark
-    Closed" toggle anymore. That old toggle used to write to the same
-    table as the calendar widget behind the scenes, which is exactly why
-    a day would sometimes show as "open" without anyone touching the
-    calendar. The calendar is now the ONLY place that controls this.
-  -->
   <div class="bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-xl flex flex-col justify-between text-white">
     <div>
       <div class="flex items-center justify-between mb-4">
@@ -37,7 +28,6 @@
         <span class="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-mono">{{ today }}</span>
       </div>
       <p class="text-sm text-slate-400 mb-6">This reflects whatever you've set for today in the Academic Calendar below. To change it, tick/untick today's date there and click Save.</p>
-
       <div class="mb-2">
         {% if is_open %}
         <div class="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm font-semibold px-4 py-2 rounded-xl">
@@ -63,7 +53,6 @@
         Current Time Limit: {{ official_check_in_display }}
       </div>
     </div>
-
     <form method="post" action="/admin/settings/check-in-time" class="flex items-end gap-3 pt-4 border-t border-slate-800">
       <div class="flex-1">
         <label class="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">New Limit</label>
@@ -78,7 +67,7 @@
   </div>
 </div>
 
-<!-- ================= SCHOOL CALENDAR (single source of truth) ================= -->
+<!-- ================= SCHOOL CALENDAR ================= -->
 <div class="bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-xl mb-10 text-white">
   <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-3">
     <div>
@@ -270,6 +259,46 @@
   </div>
   {% endif %}
 </div>
+
+<!-- ================= EXAM MANAGEMENT SECTION ================= -->
+<div class="mb-10">
+  <h2 class="text-xl font-bold text-white mb-4">📚 Exam Management</h2>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+    <a href="/admin/students" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col hover:border-cyan-500/50 hover:shadow-cyan-900/20 transition group">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-3xl">👩‍🎓</span>
+        <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition">Student Management</h3>
+      </div>
+      <p class="text-sm text-slate-400">Upload Excel lists, manage students per class, dynamic columns.</p>
+      <span class="mt-3 text-xs text-cyan-400 group-hover:text-cyan-300">Open →</span>
+    </a>
+    <a href="/admin/master-data" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col hover:border-cyan-500/50 hover:shadow-cyan-900/20 transition group">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-3xl">🗂️</span>
+        <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition">Master Data</h3>
+      </div>
+      <p class="text-sm text-slate-400">Manage subjects & test types.</p>
+      <span class="mt-3 text-xs text-cyan-400 group-hover:text-cyan-300">Open →</span>
+    </a>
+    <a href="/admin/exam-sessions" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col hover:border-cyan-500/50 hover:shadow-cyan-900/20 transition group">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-3xl">📝</span>
+        <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition">Exam Sessions</h3>
+      </div>
+      <p class="text-sm text-slate-400">Create test sessions & assign teachers.</p>
+      <span class="mt-3 text-xs text-cyan-400 group-hover:text-cyan-300">Open →</span>
+    </a>
+    <a href="/admin/exam-status" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col hover:border-cyan-500/50 hover:shadow-cyan-900/20 transition group">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-3xl">📊</span>
+        <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition">Exam Status</h3>
+      </div>
+      <p class="text-sm text-slate-400">View submissions, confirm results, download Excel.</p>
+      <span class="mt-3 text-xs text-cyan-400 group-hover:text-cyan-300">Open →</span>
+    </a>
+  </div>
+</div>
+<!-- ================= END EXAM MANAGEMENT SECTION ================= -->
 
 <!-- ================= OVERALL PROGRESS GRAPH ================= -->
 <div class="bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-xl text-white">

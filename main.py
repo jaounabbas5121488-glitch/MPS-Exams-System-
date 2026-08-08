@@ -1,11 +1,17 @@
+import json
+import os
+import shutil
+import sqlite3
+import tempfile
 from datetime import date
 from io import BytesIO
+from typing import List
 
-from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi import FastAPI, Request, Form, HTTPException, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
 from database import (
@@ -70,6 +76,7 @@ def shift_month(year: int, month: int, delta: int):
     return y, m
 
 
+# =================== AUTH & STATIC PAGES ===================
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
     return RedirectResponse(url="/login")
@@ -158,6 +165,7 @@ def signup_post(
     })
 
 
+# =================== ADMIN PANEL (existing) ===================
 @app.get("/admin", response_class=HTMLResponse)
 def admin_panel(request: Request):
     user = current_user(request)
@@ -264,15 +272,6 @@ def remove_teacher(teacher_id: int, request: Request):
     return RedirectResponse(url="/admin", status_code=303)
 
 
-# NOTE: the old single-day "/admin/calendar" quick Mark-Open/Mark-Closed
-# route has been intentionally removed. It used to write to school_calendar
-# independently of the dynamic calendar widget below, which is exactly what
-# caused "kabhi kabhi khud se koi date on ho jati thi" -- two systems were
-# fighting over the same table. The FullCalendar widget + its
-# /admin/calendar/school-days endpoints are now the ONLY way school days get
-# marked, anywhere in the app.
-
-
 @app.get("/admin/calendar/school-days")
 def get_calendar_days(request: Request):
     user = current_user(request)
@@ -339,6 +338,7 @@ def admin_teacher_reports(teacher_id: int, request: Request, year: int | None = 
     })
 
 
+# =================== TEACHER DASHBOARD & ATTENDANCE (existing) ===================
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request):
     user = current_user(request)
@@ -424,204 +424,518 @@ def progress(request: Request):
     })
 
 
-@app.get("/test-marks", response_class=HTMLResponse)
-def test_marks(
-    request: Request,
-    class_id: int | None = None,
-    subject_id: int | None = None,
-    test_type_id: int | None = None,
-    teacher_email: str | None = None,
-):
-    user = current_user(request)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
-
+# ===================== ADMIN STUDENT MANAGEMENT (NEW) =====================
+@app.get("/admin/students", response_class=HTMLResponse)
+def admin_students(request: Request):
+    user = require_admin(request)
     conn = get_db()
     classes = conn.execute("SELECT * FROM classes ORDER BY name").fetchall()
-    subjects = conn.execute("SELECT * FROM subjects ORDER BY name").fetchall()
-    tests = conn.execute("SELECT * FROM test_types ORDER BY name").fetchall()
-
-    selected_class_id = class_id or (classes[0]["id"] if classes else None)
-    selected_subject_id = subject_id or (subjects[0]["id"] if subjects else None)
-    selected_test_type_id = test_type_id or (tests[0]["id"] if tests else None)
-
-    if selected_class_id is None or selected_subject_id is None or selected_test_type_id is None:
-        conn.close()
-        return templates.TemplateResponse("coming_soon.html", {"request": request, "user": user, "title": "Test Marks"})
-
-    if user.get("role") == "admin":
-        approved_teachers = conn.execute(
-            "SELECT email, full_name FROM users WHERE role = 'teacher' AND status = 'approved' AND is_active = 1 ORDER BY full_name"
-        ).fetchall()
-        if teacher_email:
-            selected_teacher_email = teacher_email.strip().lower()
-        else:
-            selected_teacher_email = approved_teachers[0]["email"] if approved_teachers else None
-        teachers = approved_teachers
-    else:
-        selected_teacher_email = user["email"]
-        teachers = []
-
-    if not selected_teacher_email:
-        conn.close()
-        return templates.TemplateResponse("coming_soon.html", {"request": request, "user": user, "title": "Test Marks"})
-
-    today = date.today().isoformat()
-    class_row = conn.execute("SELECT * FROM classes WHERE id = ?", (selected_class_id,)).fetchone()
-    subject_row = conn.execute("SELECT * FROM subjects WHERE id = ?", (selected_subject_id,)).fetchone()
-    test_row = conn.execute("SELECT * FROM test_types WHERE id = ?", (selected_test_type_id,)).fetchone()
-    students = conn.execute(
-        "SELECT * FROM students WHERE class_id = ? ORDER BY full_name",
-        (selected_class_id,),
-    ).fetchall()
-    marks_rows = conn.execute(
-        """
-        SELECT student_id, mark
-        FROM teacher_marks
-        WHERE teacher_email = ?
-          AND date = ?
-          AND class_id = ?
-          AND subject_id = ?
-          AND test_type_id = ?
-        """,
-        (selected_teacher_email, today, selected_class_id, selected_subject_id, selected_test_type_id),
-    ).fetchall()
-    marks_map = {row["student_id"]: row["mark"] for row in marks_rows}
+    templates_info = {}
+    for cls in classes:
+        tpl = conn.execute(
+            "SELECT * FROM class_templates WHERE class_id = ?", (cls["id"],)
+        ).fetchone()
+        if tpl:
+            templates_info[cls["id"]] = {
+                "filename": tpl["template_filename"],
+                "identity_columns": json.loads(tpl["identity_columns"]),
+                "extra_columns": json.loads(tpl["extra_columns"]),
+            }
     conn.close()
-
-    return templates.TemplateResponse("marks_module1.html", {
+    return templates.TemplateResponse("admin_students.html", {
         "request": request,
         "user": user,
-        "today": today,
         "classes": classes,
-        "subjects": subjects,
-        "tests": tests,
-        "teachers": teachers,
-        "selected_teacher_email": selected_teacher_email,
-        "selected_class_id": selected_class_id,
-        "selected_subject_id": selected_subject_id,
-        "selected_test_type_id": selected_test_type_id,
-        "selected_class_name": class_row["name"] if class_row else "",
-        "selected_subject_name": subject_row["name"] if subject_row else "",
-        "selected_test_type_name": test_row["name"] if test_row else "",
-        "students": students,
-        "marks_map": marks_map,
+        "templates_info": templates_info,
     })
 
 
-@app.post("/test-marks/save")
-async def save_test_marks(request: Request):
-    user = current_user(request)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
+@app.post("/admin/students/upload")
+async def admin_students_upload(
+    request: Request,
+    class_id: int = Form(...),
+    mode: str = Form("replace"),
+    file: UploadFile = File(...),
+):
+    user = require_admin(request)
 
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return RedirectResponse(url="/admin/students?error=invalid_format", status_code=303)
+
+    suffix = os.path.splitext(file.filename)[1]
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        content = await file.read()
+        tmp.write(content)
+        tmp.close()
+
+        wb = load_workbook(tmp.name, read_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            os.unlink(tmp.name)
+            return RedirectResponse(url="/admin/students?error=empty_file", status_code=303)
+
+        headers = [str(c).strip() for c in rows[0] if c is not None]
+        if len(headers) < 2:
+            os.unlink(tmp.name)
+            return RedirectResponse(url="/admin/students?error=too_few_columns", status_code=303)
+
+        request.session["tmp_excel_path"] = tmp.name
+        request.session["tmp_class_id"] = class_id
+        request.session["tmp_mode"] = mode
+        request.session["tmp_headers"] = headers
+
+        return templates.TemplateResponse("admin_students_identity.html", {
+            "request": request,
+            "user": user,
+            "class_id": class_id,
+            "headers": headers,
+        })
+    except Exception as e:
+        os.unlink(tmp.name)
+        return RedirectResponse(url="/admin/students?error=parse_failed", status_code=303)
+
+
+@app.post("/admin/students/process")
+def admin_students_process(
+    request: Request,
+    identity_col1: str = Form(...),
+    identity_col2: str = Form(...),
+):
+    user = require_admin(request)
+    tmp_path = request.session.pop("tmp_excel_path", None)
+    class_id = request.session.pop("tmp_class_id", None)
+    mode = request.session.pop("tmp_mode", "replace")
+    headers = request.session.pop("tmp_headers", [])
+
+    if not tmp_path or not class_id or not os.path.exists(tmp_path):
+        return RedirectResponse(url="/admin/students?error=session_expired", status_code=303)
+
+    try:
+        wb = load_workbook(tmp_path, read_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        headers = [str(c).strip() for c in rows[0] if c is not None]
+
+        idx1 = headers.index(identity_col1) if identity_col1 in headers else -1
+        idx2 = headers.index(identity_col2) if identity_col2 in headers else -1
+        if idx1 == -1 or idx2 == -1:
+            os.unlink(tmp_path)
+            return RedirectResponse(url="/admin/students?error=invalid_columns", status_code=303)
+
+        extra_cols = [i for i, h in enumerate(headers) if i not in (idx1, idx2)]
+        identity_columns = [identity_col1, identity_col2]
+        extra_columns = [headers[i] for i in extra_cols]
+
+        conn = get_db()
+        if mode == "replace":
+            conn.execute("DELETE FROM student_records WHERE class_id = ?", (class_id,))
+            conn.execute("DELETE FROM class_templates WHERE class_id = ?", (class_id,))
+
+        for row in rows[1:]:
+            if not row or all(c is None for c in row):
+                continue
+            name = str(row[idx1]).strip() if row[idx1] else ""
+            father = str(row[idx2]).strip() if row[idx2] else ""
+            if not name or not father:
+                continue
+            extra_data = {}
+            for ci in extra_cols:
+                val = row[ci]
+                extra_data[headers[ci]] = str(val) if val is not None else ""
+            try:
+                conn.execute(
+                    "INSERT INTO student_records (class_id, name, father_name, extra_data) VALUES (?, ?, ?, ?)",
+                    (class_id, name, father, json.dumps(extra_data, ensure_ascii=False)),
+                )
+            except sqlite3.IntegrityError:
+                pass  # duplicate, skip
+
+        template_dir = "uploads/class_templates"
+        os.makedirs(template_dir, exist_ok=True)
+        perm_path = os.path.join(template_dir, f"class_{class_id}.xlsx")
+        shutil.copy(tmp_path, perm_path)
+
+        conn.execute(
+            "INSERT OR REPLACE INTO class_templates (class_id, template_filename, identity_columns, extra_columns) VALUES (?, ?, ?, ?)",
+            (class_id, perm_path, json.dumps(identity_columns), json.dumps(extra_columns)),
+        )
+        conn.commit()
+        conn.close()
+
+        os.unlink(tmp_path)
+        return RedirectResponse(url="/admin/students?msg=uploaded", status_code=303)
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        return RedirectResponse(url="/admin/students?error=process_failed", status_code=303)
+
+
+# ===================== ADMIN MASTER DATA =====================
+@app.get("/admin/master-data", response_class=HTMLResponse)
+def admin_master_data(request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    subjects = conn.execute("SELECT * FROM subjects ORDER BY name").fetchall()
+    test_types = conn.execute("SELECT * FROM test_types ORDER BY name").fetchall()
+    conn.close()
+    return templates.TemplateResponse("admin_master_data.html", {
+        "request": request,
+        "user": user,
+        "subjects": subjects,
+        "test_types": test_types,
+    })
+
+
+@app.post("/admin/master-data/add/subject")
+def add_subject(request: Request, name: str = Form(...)):
+    user = require_admin(request)
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO subjects (name) VALUES (?)", (name.strip(),))
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return RedirectResponse(url="/admin/master-data", status_code=303)
+
+
+@app.post("/admin/master-data/add/test-type")
+def add_test_type(request: Request, name: str = Form(...)):
+    user = require_admin(request)
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO test_types (name) VALUES (?)", (name.strip(),))
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return RedirectResponse(url="/admin/master-data", status_code=303)
+
+
+@app.post("/admin/master-data/delete/subject/{subject_id}")
+def delete_subject(subject_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    conn.execute("DELETE FROM subjects WHERE id = ?", (subject_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/master-data", status_code=303)
+
+
+@app.post("/admin/master-data/delete/test-type/{test_type_id}")
+def delete_test_type(test_type_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    conn.execute("DELETE FROM test_types WHERE id = ?", (test_type_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/master-data", status_code=303)
+
+
+# ===================== ADMIN EXAM SESSIONS =====================
+@app.get("/admin/exam-sessions", response_class=HTMLResponse)
+def admin_exam_sessions(request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    classes = conn.execute("SELECT * FROM classes ORDER BY name").fetchall()
+    subjects = conn.execute("SELECT * FROM subjects ORDER BY name").fetchall()
+    test_types = conn.execute("SELECT * FROM test_types ORDER BY name").fetchall()
+    teachers = conn.execute(
+        "SELECT email, full_name FROM users WHERE role = 'teacher' AND status = 'approved' AND is_active = 1 ORDER BY full_name"
+    ).fetchall()
+    sessions = conn.execute("""
+        SELECT es.*, c.name as class_name, tt.name as test_type_name,
+        (SELECT COUNT(*) FROM exam_session_subjects WHERE session_id = es.id) as subject_count
+        FROM exam_sessions es
+        JOIN classes c ON c.id = es.class_id
+        JOIN test_types tt ON tt.id = es.test_type_id
+        ORDER BY es.created_at DESC
+    """).fetchall()
+    conn.close()
+    return templates.TemplateResponse("admin_exam_sessions.html", {
+        "request": request,
+        "user": user,
+        "classes": classes,
+        "subjects": subjects,
+        "test_types": test_types,
+        "teachers": teachers,
+        "sessions": sessions,
+    })
+
+
+@app.post("/admin/exam-sessions/create")
+async def admin_create_exam_session(request: Request):
+    user = require_admin(request)
     form = await request.form()
     class_id = int(form["class_id"])
-    subject_id = int(form["subject_id"])
     test_type_id = int(form["test_type_id"])
-    teacher_email = form.get("teacher_email")
-    if user.get("role") != "admin":
-        teacher_email = user["email"]
-    else:
-        teacher_email = (teacher_email or "").strip().lower()
-
-    today = date.today().isoformat()
+    test_number = form["test_number"].strip()
+    conduct_date = form["conduct_date"].strip()
+    syllabus = form.get("syllabus", "").strip()
+    
     conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO exam_sessions (class_id, test_type_id, test_number, conduct_date, syllabus)
+        VALUES (?, ?, ?, ?, ?)
+    """, (class_id, test_type_id, test_number, conduct_date, syllabus))
+    session_id = cur.lastrowid
 
-    student_ids = []
-    for key in form.keys():
-        if str(key).startswith("mark_"):
-            try:
-                student_ids.append(int(str(key).split("mark_")[1]))
-            except Exception:
-                pass
-    student_ids = sorted(set(student_ids))
-
-    for student_id in student_ids:
-        raw = form.get(f"mark_{student_id}")
-        mark_value = None if raw is None or str(raw).strip() == "" else float(raw)
-        conn.execute(
-            """
-            INSERT INTO teacher_marks
-              (teacher_email, date, class_id, subject_id, test_type_id, student_id, mark)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(teacher_email, date, class_id, subject_id, test_type_id, student_id)
-            DO UPDATE SET mark = excluded.mark
-            """,
-            (teacher_email, today, class_id, subject_id, test_type_id, student_id, mark_value),
-        )
+    idx = 0
+    while True:
+        subj_key = f"subject_id_{idx}"
+        if subj_key not in form:
+            break
+        subject_id = int(form[subj_key])
+        teacher_email = form[f"teacher_email_{idx}"].strip()
+        total_marks = float(form[f"total_marks_{idx}"])
+        passing_marks = float(form[f"passing_marks_{idx}"])
+        cur.execute("""
+            INSERT INTO exam_session_subjects (session_id, subject_id, teacher_email, total_marks, passing_marks)
+            VALUES (?, ?, ?, ?, ?)
+        """, (session_id, subject_id, teacher_email, total_marks, passing_marks))
+        idx += 1
 
     conn.commit()
     conn.close()
+    return RedirectResponse(url="/admin/exam-sessions?msg=created", status_code=303)
 
-    redirect_url = f"/test-marks?msg=saved&class_id={class_id}&subject_id={subject_id}&test_type_id={test_type_id}"
+
+# ===================== TEACHER EXAM MARKS ENTRY (NEW) =====================
+@app.get("/test-marks", response_class=HTMLResponse)
+def teacher_exam_marks_home(request: Request, session_id: int | None = None):
+    user = require_login(request)
     if user.get("role") == "admin":
-        redirect_url += f"&teacher_email={teacher_email}"
-    return RedirectResponse(url=redirect_url, status_code=303)
-
-
-@app.post("/test-marks/export")
-async def export_test_marks(request: Request):
-    user = current_user(request)
-    if not user or user.get("role") != "admin":
-        return RedirectResponse(url="/login", status_code=303)
-
-    form = await request.form()
-    class_id = int(form["class_id"])
-    subject_id = int(form["subject_id"])
-    test_type_id = int(form["test_type_id"])
-    teacher_email = (form["teacher_email"] or "").strip().lower()
-    today = date.today().isoformat()
+        return RedirectResponse(url="/admin/exam-status", status_code=303)
 
     conn = get_db()
-    class_row = conn.execute("SELECT name FROM classes WHERE id = ?", (class_id,)).fetchone()
-    subject_row = conn.execute("SELECT name FROM subjects WHERE id = ?", (subject_id,)).fetchone()
-    test_row = conn.execute("SELECT name FROM test_types WHERE id = ?", (test_type_id,)).fetchone()
-    students = conn.execute(
-        "SELECT id, full_name FROM students WHERE class_id = ? ORDER BY full_name",
-        (class_id,),
-    ).fetchall()
-    marks_rows = conn.execute(
-        """
-        SELECT student_id, mark
-        FROM teacher_marks
-        WHERE teacher_email = ?
-          AND date = ?
-          AND class_id = ?
-          AND subject_id = ?
-          AND test_type_id = ?
-        """,
-        (teacher_email, today, class_id, subject_id, test_type_id),
-    ).fetchall()
-    marks_map = {row["student_id"]: row["mark"] for row in marks_rows}
+    sessions = conn.execute("""
+        SELECT DISTINCT es.id, c.name as class_name, tt.name as test_type_name,
+               es.test_number, es.conduct_date
+        FROM exam_sessions es
+        JOIN exam_session_subjects ess ON ess.session_id = es.id
+        JOIN classes c ON c.id = es.class_id
+        JOIN test_types tt ON tt.id = es.test_type_id
+        WHERE ess.teacher_email = ?
+        ORDER BY es.conduct_date DESC
+    """, (user["email"],)).fetchall()
+
+    selected_session_id = session_id or (sessions[0]["id"] if sessions else None)
+    session_subjects = []
+    if selected_session_id:
+        session_subjects = conn.execute("""
+            SELECT ess.*, s.name as subject_name
+            FROM exam_session_subjects ess
+            JOIN subjects s ON s.id = ess.subject_id
+            WHERE ess.session_id = ? AND ess.teacher_email = ?
+        """, (selected_session_id, user["email"])).fetchall()
     conn.close()
+    return templates.TemplateResponse("teacher_exam_marks.html", {
+        "request": request,
+        "user": user,
+        "sessions": sessions,
+        "selected_session_id": selected_session_id,
+        "session_subjects": session_subjects,
+    })
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Marks"
-    bold = Font(bold=True)
 
-    ws.append(["MPS Exams System - Test Marks (Module 1)"])
-    ws.append([f"Date: {today}"])
-    ws.append([f"Class: {class_row['name'] if class_row else ''}"])
-    ws.append([f"Subject: {subject_row['name'] if subject_row else ''}"])
-    ws.append([f"Test Type: {test_row['name'] if test_row else ''}"])
-    ws.append([f"Teacher: {teacher_email}"])
-    ws.append([])
-    ws.append(["#", "Student", "Mark"])
-    for cell in ws[ws.max_row]:
-        cell.font = bold
+@app.get("/test-marks/entry", response_class=HTMLResponse)
+def marks_entry_grid(request: Request, session_subject_id: int):
+    user = require_login(request)
+    conn = get_db()
+    ss = conn.execute("""
+        SELECT ess.*, s.name as subject_name, es.class_id, es.test_type_id, es.test_number,
+               tt.name as test_type_name, c.name as class_name
+        FROM exam_session_subjects ess
+        JOIN exam_sessions es ON es.id = ess.session_id
+        JOIN subjects s ON s.id = ess.subject_id
+        JOIN test_types tt ON tt.id = es.test_type_id
+        JOIN classes c ON c.id = es.class_id
+        WHERE ess.id = ?
+    """, (session_subject_id,)).fetchone()
+    if not ss or ss["teacher_email"] != user["email"]:
+        conn.close()
+        return RedirectResponse(url="/test-marks?error=unauthorized", status_code=303)
 
-    for idx, student in enumerate(students, start=1):
-        ws.append([idx, student["full_name"], marks_map.get(student["id"], None)])
+    tpl = conn.execute("SELECT * FROM class_templates WHERE class_id = ?", (ss["class_id"],)).fetchone()
+    extra_columns = json.loads(tpl["extra_columns"]) if tpl else []
+    identity_columns = json.loads(tpl["identity_columns"]) if tpl else ["Name", "Father Name"]
+
+    students = conn.execute("""
+        SELECT sr.*, em.marks_obtained as mark
+        FROM student_records sr
+        LEFT JOIN exam_marks em ON em.student_id = sr.id
+            AND em.session_subject_id = ?
+        WHERE sr.class_id = ?
+        ORDER BY sr.name
+    """, (session_subject_id, ss["class_id"])).fetchall()
+
+    conn.close()
+    return templates.TemplateResponse("teacher_exam_marks_grid.html", {
+        "request": request,
+        "user": user,
+        "session_subject_id": session_subject_id,
+        "session_id": ss["session_id"],
+        "subject_name": ss["subject_name"],
+        "class_name": ss["class_name"],
+        "test_info": f"{ss['test_type_name']} {ss['test_number']}",
+        "total_marks": ss["total_marks"],
+        "passing_marks": ss["passing_marks"],
+        "students": students,
+        "extra_columns": extra_columns,
+    })
+
+
+@app.post("/test-marks/save-new")
+async def save_marks_new(request: Request):
+    user = require_login(request)
+    form = await request.form()
+    session_subject_id = int(form["session_subject_id"])
+    session_id = int(form["session_id"])
+
+    conn = get_db()
+    ss = conn.execute("SELECT * FROM exam_session_subjects WHERE id = ? AND teacher_email = ?",
+                      (session_subject_id, user["email"])).fetchone()
+    if not ss:
+        conn.close()
+        return RedirectResponse(url="/test-marks?error=unauthorized", status_code=303)
+
+    conn.execute("DELETE FROM exam_marks WHERE session_subject_id = ?", (session_subject_id,))
+
+    for key in form.keys():
+        if key.startswith("mark_"):
+            student_id = int(key.split("_")[1])
+            raw = form[key]
+            if raw and str(raw).strip():
+                marks_obtained = float(raw)
+                conn.execute("INSERT INTO exam_marks (session_subject_id, student_id, marks_obtained) VALUES (?, ?, ?)",
+                             (session_subject_id, student_id, marks_obtained))
+
+    conn.execute("UPDATE exam_session_subjects SET submitted = 1 WHERE id = ?", (session_subject_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url=f"/test-marks?msg=saved&session_id={session_id}", status_code=303)
+
+
+# ===================== ADMIN EXAM STATUS & CONFIRMATION =====================
+@app.get("/admin/exam-status", response_class=HTMLResponse)
+def admin_exam_status(request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    session_rows = conn.execute("""
+        SELECT es.*, c.name as class_name, tt.name as test_type_name
+        FROM exam_sessions es
+        JOIN classes c ON c.id = es.class_id
+        JOIN test_types tt ON tt.id = es.test_type_id
+        ORDER BY es.conduct_date DESC
+    """).fetchall()
+
+    sessions = []
+    for sess in session_rows:
+        subjects = conn.execute("""
+            SELECT ess.*, s.name as subject_name, u.full_name as teacher_name
+            FROM exam_session_subjects ess
+            JOIN subjects s ON s.id = ess.subject_id
+            JOIN users u ON u.email = ess.teacher_email
+            WHERE ess.session_id = ?
+        """, (sess["id"],)).fetchall()
+        sess_dict = dict(sess)
+        sess_dict["subjects"] = [dict(s) for s in subjects]
+        sessions.append(sess_dict)
+    conn.close()
+    return templates.TemplateResponse("admin_exam_status.html", {
+        "request": request,
+        "user": user,
+        "sessions": sessions,
+    })
+
+
+@app.post("/admin/exam-status/confirm/{session_id}")
+def confirm_result(session_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    conn.execute("UPDATE exam_sessions SET status = 'confirmed' WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/exam-status?msg=confirmed", status_code=303)
+
+
+@app.post("/admin/exam-status/reopen/{session_id}")
+def reopen_session(session_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    conn.execute("UPDATE exam_sessions SET status = 'open' WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/exam-status?msg=reopened", status_code=303)
+
+
+# ===================== ADMIN EXPORT SESSION EXCEL =====================
+@app.get("/admin/exam-session/{session_id}/export")
+def export_session_excel(session_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    session = conn.execute("""
+        SELECT es.*, c.name as class_name
+        FROM exam_sessions es JOIN classes c ON c.id = es.class_id
+        WHERE es.id = ?
+    """, (session_id,)).fetchone()
+    if not session:
+        conn.close()
+        raise HTTPException(status_code=404)
+
+    subjects = conn.execute("""
+        SELECT ess.*, s.name as subject_name
+        FROM exam_session_subjects ess JOIN subjects s ON s.id = ess.subject_id
+        WHERE ess.session_id = ?
+    """, (session_id,)).fetchall()
+
+    tpl = conn.execute("SELECT * FROM class_templates WHERE class_id = ?", (session["class_id"],)).fetchone()
+    identity_cols = json.loads(tpl["identity_columns"]) if tpl else ["Name", "Father Name"]
+
+    students = conn.execute("""
+        SELECT * FROM student_records WHERE class_id = ? ORDER BY name
+    """, (session["class_id"],)).fetchall()
+
+    if tpl and os.path.exists(tpl["template_filename"]):
+        wb = load_workbook(tpl["template_filename"])
+        ws = wb.active
+        max_col = ws.max_column
+        col_offset = max_col + 1
+    else:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Result"
+        for i, col in enumerate(identity_cols, start=1):
+            ws.cell(row=1, column=i, value=col).font = Font(bold=True)
+        col_offset = len(identity_cols) + 1
+
+    for j, subj in enumerate(subjects):
+        header = f"{subj['subject_name']} (Out of {subj['total_marks']})"
+        ws.cell(row=1, column=col_offset + j, value=header).font = Font(bold=True)
+
+    for i, student in enumerate(students, start=2):
+        if not tpl or not os.path.exists(tpl["template_filename"]):
+            ws.cell(row=i, column=1, value=student["name"])
+            ws.cell(row=i, column=2, value=student["father_name"])
+        for j, subj in enumerate(subjects):
+            mark_row = conn.execute("""
+                SELECT marks_obtained FROM exam_marks
+                WHERE session_subject_id = ? AND student_id = ?
+            """, (subj["id"], student["id"])).fetchone()
+            mark_val = mark_row["marks_obtained"] if mark_row else ""
+            ws.cell(row=i, column=col_offset + j, value=mark_val)
+
+    conn.close()
 
     output = BytesIO()
     wb.save(output)
     output.seek(0)
-
-    filename = f"marks_module1_class{class_id}_subject{subject_id}_test{test_type_id}_{today}.xlsx"
+    filename = f"result_{session['class_name']}_{session['test_number']}_{date.today().isoformat()}.xlsx"
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
