@@ -521,10 +521,6 @@ def init_db():
     _add_column_if_missing(cur, "attendance", "check_in_ts", "TEXT")
     _add_column_if_missing(cur, "attendance", "punctuality", "TEXT DEFAULT 'on-time'")
 
-    # is_open defaults to 0 (closed) -- a day only becomes a school day when
-    # the admin explicitly marks it open via the calendar and saves. No row
-    # is ever inserted without an explicit is_open value in this codebase,
-    # but the column default matches that "closed unless marked" rule too.
     cur.execute("""
         CREATE TABLE IF NOT EXISTS school_calendar (
             date TEXT PRIMARY KEY,
@@ -582,7 +578,8 @@ def init_db():
             UNIQUE(teacher_email, date, class_id, subject_id, test_type_id, student_id)
         )
     """)
-        # ------------------------------------------------------------
+
+    # ------------------------------------------------------------
     # NEW TABLES FOR EXAM MARKS SYSTEM
     # ------------------------------------------------------------
     cur.execute("""
@@ -605,7 +602,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL,
             subject_id INTEGER NOT NULL,
-            teacher_email TEXT NOT NULL,
+            teacher_email TEXT NOT NULL DEFAULT '',
             total_marks REAL NOT NULL,
             passing_marks REAL NOT NULL DEFAULT 0,
             submitted INTEGER NOT NULL DEFAULT 0,
@@ -613,6 +610,8 @@ def init_db():
             FOREIGN KEY (subject_id) REFERENCES subjects(id)
         )
     """)
+
+    _add_column_if_missing(cur, "exam_session_subjects", "syllabus", "TEXT DEFAULT ''")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS exam_marks (

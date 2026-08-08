@@ -589,6 +589,7 @@ def admin_master_data(request: Request):
         "test_types": test_types,
     })
 
+
 @app.post("/admin/master-data/add/subject")
 def add_subject(request: Request, name: str = Form(...)):
     user = require_admin(request)
@@ -615,6 +616,19 @@ def add_test_type(request: Request, name: str = Form(...)):
     return RedirectResponse(url="/admin/master-data", status_code=303)
 
 
+@app.post("/admin/master-data/add/class")
+def add_class(request: Request, name: str = Form(...)):
+    user = require_admin(request)
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO classes (name) VALUES (?)", (name.strip(),))
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return RedirectResponse(url="/admin/master-data", status_code=303)
+
+
 @app.post("/admin/master-data/delete/subject/{subject_id}")
 def delete_subject(subject_id: int, request: Request):
     user = require_admin(request)
@@ -633,17 +647,7 @@ def delete_test_type(test_type_id: int, request: Request):
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin/master-data", status_code=303)
-@app.post("/admin/master-data/add/class")
-def add_class(request: Request, name: str = Form(...)):
-    user = require_admin(request)
-    conn = get_db()
-    try:
-        conn.execute("INSERT INTO classes (name) VALUES (?)", (name.strip(),))
-        conn.commit()
-    except Exception:
-        pass
-    conn.close()
-    return RedirectResponse(url="/admin/master-data", status_code=303)
+
 
 @app.post("/admin/master-data/delete/class/{class_id}")
 def delete_class(class_id: int, request: Request):
@@ -654,6 +658,7 @@ def delete_class(class_id: int, request: Request):
     conn.close()
     return RedirectResponse(url="/admin/master-data", status_code=303)
 
+
 # ===================== ADMIN EXAM SESSIONS =====================
 @app.get("/admin/exam-sessions", response_class=HTMLResponse)
 def admin_exam_sessions(request: Request):
@@ -662,9 +667,6 @@ def admin_exam_sessions(request: Request):
     classes = conn.execute("SELECT * FROM classes ORDER BY name").fetchall()
     subjects = conn.execute("SELECT * FROM subjects ORDER BY name").fetchall()
     test_types = conn.execute("SELECT * FROM test_types ORDER BY name").fetchall()
-    teachers = conn.execute(
-        "SELECT email, full_name FROM users WHERE role = 'teacher' AND status = 'approved' AND is_active = 1 ORDER BY full_name"
-    ).fetchall()
     sessions = conn.execute("""
         SELECT es.*, c.name as class_name, tt.name as test_type_name,
         (SELECT COUNT(*) FROM exam_session_subjects WHERE session_id = es.id) as subject_count
@@ -680,7 +682,6 @@ def admin_exam_sessions(request: Request):
         "classes": classes,
         "subjects": subjects,
         "test_types": test_types,
-        "teachers": teachers,
         "sessions": sessions,
     })
 
@@ -693,14 +694,14 @@ async def admin_create_exam_session(request: Request):
     test_type_id = int(form["test_type_id"])
     test_number = form["test_number"].strip()
     conduct_date = form["conduct_date"].strip()
-    syllabus = form.get("syllabus", "").strip()
-    
+    session_syllabus = form.get("session_syllabus", "").strip()
+
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO exam_sessions (class_id, test_type_id, test_number, conduct_date, syllabus)
         VALUES (?, ?, ?, ?, ?)
-    """, (class_id, test_type_id, test_number, conduct_date, syllabus))
+    """, (class_id, test_type_id, test_number, conduct_date, session_syllabus))
     session_id = cur.lastrowid
 
     idx = 0
@@ -709,13 +710,13 @@ async def admin_create_exam_session(request: Request):
         if subj_key not in form:
             break
         subject_id = int(form[subj_key])
-        teacher_email = form[f"teacher_email_{idx}"].strip()
         total_marks = float(form[f"total_marks_{idx}"])
         passing_marks = float(form[f"passing_marks_{idx}"])
+        syllabus = form.get(f"syllabus_{idx}", "").strip()
         cur.execute("""
-            INSERT INTO exam_session_subjects (session_id, subject_id, teacher_email, total_marks, passing_marks)
-            VALUES (?, ?, ?, ?, ?)
-        """, (session_id, subject_id, teacher_email, total_marks, passing_marks))
+            INSERT INTO exam_session_subjects (session_id, subject_id, teacher_email, total_marks, passing_marks, syllabus)
+            VALUES (?, ?, '', ?, ?, ?)
+        """, (session_id, subject_id, total_marks, passing_marks, syllabus))
         idx += 1
 
     conn.commit()
@@ -738,9 +739,8 @@ def teacher_exam_marks_home(request: Request, session_id: int | None = None):
         JOIN exam_session_subjects ess ON ess.session_id = es.id
         JOIN classes c ON c.id = es.class_id
         JOIN test_types tt ON tt.id = es.test_type_id
-        WHERE ess.teacher_email = ?
         ORDER BY es.conduct_date DESC
-    """, (user["email"],)).fetchall()
+    """).fetchall()
 
     selected_session_id = session_id or (sessions[0]["id"] if sessions else None)
     session_subjects = []
@@ -749,8 +749,8 @@ def teacher_exam_marks_home(request: Request, session_id: int | None = None):
             SELECT ess.*, s.name as subject_name
             FROM exam_session_subjects ess
             JOIN subjects s ON s.id = ess.subject_id
-            WHERE ess.session_id = ? AND ess.teacher_email = ?
-        """, (selected_session_id, user["email"])).fetchall()
+            WHERE ess.session_id = ?
+        """, (selected_session_id,)).fetchall()
     conn.close()
     return templates.TemplateResponse("teacher_exam_marks.html", {
         "request": request,
@@ -775,9 +775,9 @@ def marks_entry_grid(request: Request, session_subject_id: int):
         JOIN classes c ON c.id = es.class_id
         WHERE ess.id = ?
     """, (session_subject_id,)).fetchone()
-    if not ss or ss["teacher_email"] != user["email"]:
+    if not ss:
         conn.close()
-        return RedirectResponse(url="/test-marks?error=unauthorized", status_code=303)
+        return RedirectResponse(url="/test-marks?error=not_found", status_code=303)
 
     tpl = conn.execute("SELECT * FROM class_templates WHERE class_id = ?", (ss["class_id"],)).fetchone()
     extra_columns = json.loads(tpl["extra_columns"]) if tpl else []
@@ -816,11 +816,11 @@ async def save_marks_new(request: Request):
     session_id = int(form["session_id"])
 
     conn = get_db()
-    ss = conn.execute("SELECT * FROM exam_session_subjects WHERE id = ? AND teacher_email = ?",
-                      (session_subject_id, user["email"])).fetchone()
+    ss = conn.execute("SELECT * FROM exam_session_subjects WHERE id = ?",
+                      (session_subject_id,)).fetchone()
     if not ss:
         conn.close()
-        return RedirectResponse(url="/test-marks?error=unauthorized", status_code=303)
+        return RedirectResponse(url="/test-marks?error=not_found", status_code=303)
 
     conn.execute("DELETE FROM exam_marks WHERE session_subject_id = ?", (session_subject_id,))
 
@@ -855,10 +855,9 @@ def admin_exam_status(request: Request):
     sessions = []
     for sess in session_rows:
         subjects = conn.execute("""
-            SELECT ess.*, s.name as subject_name, u.full_name as teacher_name
+            SELECT ess.*, s.name as subject_name
             FROM exam_session_subjects ess
             JOIN subjects s ON s.id = ess.subject_id
-            JOIN users u ON u.email = ess.teacher_email
             WHERE ess.session_id = ?
         """, (sess["id"],)).fetchall()
         sess_dict = dict(sess)
