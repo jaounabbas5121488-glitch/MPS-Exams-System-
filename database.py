@@ -8,9 +8,6 @@ DB_PATH = "mps_exams.db"
 DEFAULT_CHECK_IN_TIME = "08:30"
 PKT = ZoneInfo("Asia/Karachi")
 
-# NOTE: there is no hardcoded session-start date anymore. The session's
-# first day is derived dynamically -- see get_session_start() below.
-
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -60,12 +57,6 @@ def get_official_check_in_time(conn) -> str:
 
 
 def is_school_open(conn, day_str: str) -> bool:
-    """
-    A day is OPEN only if the admin has explicitly ticked it in the calendar
-    (is_open = 1). Anything not marked is CLOSED by default. This is the
-    single source of truth for the whole system -- no other endpoint should
-    write school-open state.
-    """
     row = conn.execute(
         "SELECT is_open FROM school_calendar WHERE date = ?",
         (day_str,),
@@ -80,14 +71,6 @@ def get_school_open_status(conn, day: str) -> int:
 
 
 def bulk_set_school_days(conn, dates: dict):
-    """
-    dates: { "2026-09-05": True, "2026-09-06": False, ... }
-    Handles single day, a dragged week, or a full vacation range in one go.
-
-    IMPORTANT: if a date is being switched to CLOSED, any attendance already
-    recorded by teachers for that date is deleted -- a day that is not a
-    school day cannot have attendance against it.
-    """
     for day_str, is_open in dates.items():
         try:
             date.fromisoformat(day_str)
@@ -112,7 +95,6 @@ def bulk_set_school_days(conn, dates: dict):
 
 
 def get_school_calendar_events(conn):
-    """All saved overrides, for FullCalendar to color in."""
     rows = conn.execute("SELECT date, is_open FROM school_calendar ORDER BY date").fetchall()
     events = []
     for row in rows:
@@ -126,12 +108,6 @@ def get_school_calendar_events(conn):
 
 
 def get_session_start(conn) -> date | None:
-    """
-    The session's real start date -- the EARLIEST date the admin has ever
-    marked as an open school day. No hardcoding: if the first day ever
-    opened is 23 August, this returns 23 August. Returns None if no day
-    has been marked open yet (session hasn't effectively started).
-    """
     row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
     if row and row["d"]:
         return date.fromisoformat(row["d"])
@@ -139,12 +115,6 @@ def get_session_start(conn) -> date | None:
 
 
 def count_total_open_days_marked(conn, start: date | None = None, end: date | None = None) -> int:
-    """
-    Total school-open days marked -- every date in school_calendar with
-    is_open = 1, no matter which month/year it falls in. Session-start
-    filtering removed here: if admin marks a day open, it counts in the
-    total, period.
-    """
     query = "SELECT COUNT(*) as c FROM school_calendar WHERE is_open = 1"
     params = []
     if start:
@@ -197,10 +167,6 @@ def record_check_in(conn, teacher_email: str, day: str):
 
 
 def count_open_days_in_month(conn, year: int, month: int, up_to_day: int | None = None) -> int:
-    """
-    Single-query count of open days in a month, always read directly from
-    school_calendar so it can never drift from the calendar UI's own state.
-    """
     _, days_in_month = monthrange(year, month)
     last_day = up_to_day if up_to_day is not None else days_in_month
     start = date(year, month, 1).isoformat()
@@ -266,11 +232,6 @@ def get_progress_stats(conn, teacher_email: str, year: int | None = None, month:
 
 
 def get_session_progress_totals(conn, teacher_email: str) -> dict:
-    """
-    Fixed, always-accumulating totals for the WHOLE session so far
-    (SESSION_START -> today) -- for the "Total Session" pie chart. This
-    never resets and never shrinks; it only grows as the session goes on.
-    """
     today = date.today()
     start = get_session_start(conn)
 
@@ -300,11 +261,6 @@ def get_session_progress_totals(conn, teacher_email: str) -> dict:
 
 
 def get_monthly_progress_breakdown(conn, teacher_email: str):
-    """
-    One entry per session month (present/absent/rate) -- used to draw one
-    pie chart per month. A new entry appears automatically once a new
-    month begins, exactly like the admin calendar's month-wise counter.
-    """
     breakdown = []
     for yy, mm in get_session_months(conn):
         stats = get_progress_stats(conn, teacher_email, yy, mm)
@@ -318,12 +274,6 @@ def get_monthly_progress_breakdown(conn, teacher_email: str):
 
 
 def get_session_months(conn, upto: date | None = None):
-    """
-    All (year, month) pairs from the session's REAL start (earliest date
-    ever marked open by the admin) up to today. Grows by itself every time
-    a new month begins. Returns an empty list if no day has been opened
-    yet at all.
-    """
     session_start = get_session_start(conn)
     if session_start is None:
         return []
@@ -342,10 +292,6 @@ def get_session_months(conn, upto: date | None = None):
 
 
 def get_monthly_trend(conn, teacher_email: str):
-    """
-    Attendance % for EVERY month of the session so far (Sept 2026 -> current
-    month). A new bar/point appears automatically once a new month starts.
-    """
     labels, rates = [], []
     for yy, mm in get_session_months(conn):
         stats = get_progress_stats(conn, teacher_email, yy, mm)
@@ -355,10 +301,6 @@ def get_monthly_trend(conn, teacher_email: str):
 
 
 def get_monthly_attendance_time_trend(conn, teacher_email: str):
-    """
-    Average check-in TIME per month (in minutes past midnight, plus a
-    human-readable version) for every month of the session so far.
-    """
     labels, avg_minutes, avg_display = [], [], []
     for yy, mm in get_session_months(conn):
         label = date(yy, mm, 1).strftime("%b %Y")
@@ -398,7 +340,6 @@ def get_monthly_attendance_time_trend(conn, teacher_email: str):
 
 
 def get_all_teachers_average_trend(conn):
-    """Average monthly attendance % across all active teachers, whole session so far."""
     teachers = conn.execute(
         "SELECT email FROM users WHERE role = 'teacher' AND status = 'approved' AND is_active = 1"
     ).fetchall()
@@ -483,6 +424,8 @@ def init_db():
             name TEXT UNIQUE NOT NULL
         )
     """)
+    _add_column_if_missing(cur, "subjects", "default_total_marks", "REAL DEFAULT 25")
+    _add_column_if_missing(cur, "subjects", "default_passing_marks", "REAL DEFAULT 10")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS test_types (
@@ -531,6 +474,8 @@ def init_db():
             FOREIGN KEY (test_type_id) REFERENCES test_types(id)
         )
     """)
+
+    _add_column_if_missing(cur, "exam_sessions", "is_visible", "INTEGER NOT NULL DEFAULT 1")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS exam_session_subjects (

@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from collections import defaultdict
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -35,6 +36,39 @@ def dashboard(request: Request):
     is_open = get_school_open_status(conn, today)
     attendance = get_teacher_attendance(conn, user["email"], today)
     official_check_in_display = format_time_display(get_official_check_in_time(conn))
+
+    # ────── Teacher Quick Stats ──────
+    # Total confirmed sessions where teacher has at least one subject
+    total_tests = conn.execute("""
+        SELECT COUNT(DISTINCT es.id)
+        FROM exam_sessions es
+        JOIN exam_session_subjects ess ON ess.session_id = es.id
+        WHERE ess.teacher_email = ? AND es.status = 'confirmed'
+    """, (user["email"],)).fetchone()[0] or 0
+
+    # Total unique students taught (across all confirmed sessions)
+    total_students = conn.execute("""
+        SELECT COUNT(DISTINCT em.student_id)
+        FROM exam_marks em
+        JOIN exam_session_subjects ess ON ess.id = em.session_subject_id
+        JOIN exam_sessions es ON es.id = ess.session_id
+        WHERE ess.teacher_email = ? AND es.status = 'confirmed'
+    """, (user["email"],)).fetchone()[0] or 0
+
+    # Average pass% across all subjects
+    avg_pass = conn.execute("""
+        SELECT AVG(pass_pct) FROM (
+            SELECT 
+                (CAST(SUM(CASE WHEN em.marks_obtained >= ess.passing_marks THEN 1 ELSE 0 END) AS REAL) * 100.0 / COUNT(*)) as pass_pct
+            FROM exam_session_subjects ess
+            JOIN exam_marks em ON em.session_subject_id = ess.id
+            JOIN exam_sessions es ON es.id = ess.session_id
+            WHERE ess.teacher_email = ? AND es.status = 'confirmed'
+            GROUP BY ess.id
+        )
+    """, (user["email"],)).fetchone()[0]
+    avg_pass = round(avg_pass, 1) if avg_pass else 0
+
     conn.close()
 
     return templates.TemplateResponse("dashboard.html", {
@@ -44,6 +78,9 @@ def dashboard(request: Request):
         "is_open": is_open,
         "attendance": attendance,
         "official_check_in_display": official_check_in_display,
+        "total_tests": total_tests,
+        "total_students": total_students,
+        "avg_pass": avg_pass,
     })
 
 
@@ -99,6 +136,7 @@ def teacher_exam_marks_home(request: Request, session_id: int | None = None):
         JOIN exam_session_subjects ess ON ess.session_id = es.id
         JOIN classes c ON c.id = es.class_id
         JOIN test_types tt ON tt.id = es.test_type_id
+        WHERE es.is_visible = 1
         ORDER BY es.conduct_date DESC
     """).fetchall()
 
@@ -213,7 +251,7 @@ async def save_marks_new(request: Request):
     return RedirectResponse(url=f"/test-marks?msg=saved&session_id={session_id}", status_code=303)
 
 
-# ===================== TEACHER PROGRESS (with exam charts) =====================
+# ===================== TEACHER PROGRESS (with test‑wise grouped exam results) =====================
 @router.get("/progress", response_class=HTMLResponse)
 def progress(request: Request):
     user = require_login(request)
@@ -225,33 +263,57 @@ def progress(request: Request):
     session_totals = get_session_progress_totals(conn, user["email"])
     monthly_breakdown = get_monthly_progress_breakdown(conn, user["email"])
 
-    exam_results = []
-    sessions = conn.execute("""
-        SELECT DISTINCT es.id, es.test_number, es.conduct_date,
-               c.name as class_name, tt.name as test_type_name
-        FROM exam_sessions es
-        JOIN exam_session_subjects ess ON ess.session_id = es.id
+    # ─── Aggregated exam results (grouped by test type + test number) ───
+    session_subjects = conn.execute("""
+        SELECT ess.id as ss_id, ess.session_id, ess.subject_id, ess.passing_marks, ess.total_marks,
+               s.name as subject_name, es.test_number, es.conduct_date, tt.name as test_type_name,
+               tt.id as test_type_id, c.name as class_name
+        FROM exam_session_subjects ess
+        JOIN exam_sessions es ON es.id = ess.session_id
+        JOIN subjects s ON s.id = ess.subject_id
         JOIN classes c ON c.id = es.class_id
         JOIN test_types tt ON tt.id = es.test_type_id
         WHERE ess.teacher_email = ? AND es.status = 'confirmed'
         ORDER BY es.conduct_date DESC
     """, (user["email"],)).fetchall()
 
-    for sess in sessions:
-        summary = conn.execute("SELECT * FROM session_result_summary WHERE session_id = ?", (sess["id"],)).fetchone()
-        if not summary:
-            continue
-        all_subjects = json.loads(summary["subject_details"])
-        my_subjects = [s for s in all_subjects if s["teacher_email"] == user["email"]]
-        if not my_subjects:
-            continue
-        exam_results.append({
-            "session_id": sess["id"],
-            "class_name": sess["class_name"],
-            "test_type_name": sess["test_type_name"],
-            "test_number": sess["test_number"],
-            "conduct_date": sess["conduct_date"],
-            "subjects": my_subjects
+    group_summary = defaultdict(lambda: {
+        "test_type_name": "",
+        "test_number": "",
+        "classes": defaultdict(lambda: {"subjects": []})
+    })
+
+    for ss in session_subjects:
+        marks = conn.execute("SELECT marks_obtained FROM exam_marks WHERE session_subject_id = ?", (ss["ss_id"],)).fetchall()
+        total = len(marks)
+        pass_cnt = sum(1 for m in marks if m["marks_obtained"] and m["marks_obtained"] >= ss["passing_marks"])
+        fail_cnt = total - pass_cnt
+        pass_percent = round((pass_cnt / total) * 100, 1) if total else 0
+
+        key = (ss["test_type_id"], ss["test_number"])
+        group = group_summary[key]
+        group["test_type_name"] = ss["test_type_name"]
+        group["test_number"] = ss["test_number"]
+        class_group = group["classes"][ss["class_name"]]
+        class_group["subjects"].append({
+            "subject_name": ss["subject_name"],
+            "total_marks": ss["total_marks"],
+            "passing_marks": ss["passing_marks"],
+            "total_students": total,
+            "pass_count": pass_cnt,
+            "fail_count": fail_cnt,
+            "pass_percent": pass_percent,
+        })
+
+    grouped_exam_results = []
+    for key, grp in group_summary.items():
+        classes_list = []
+        for cls_name, cls_data in grp["classes"].items():
+            classes_list.append({"class_name": cls_name, "subjects": cls_data["subjects"]})
+        grouped_exam_results.append({
+            "test_type_name": grp["test_type_name"],
+            "test_number": grp["test_number"],
+            "classes": classes_list
         })
 
     conn.close()
@@ -262,5 +324,5 @@ def progress(request: Request):
         "stats": stats,
         "session_totals": session_totals,
         "monthly_breakdown": monthly_breakdown,
-        "exam_results": exam_results,
+        "grouped_exam_results": grouped_exam_results,
     })

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Upload Preview – Admin{% endblock %}
+{% block main_class %}max-w-6xl mx-auto px-4 py-8{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/admin/students" class="text-indigo-600 text-sm hover:underline">← Back to Student Management</a>
+</div>
+
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <h1 class="text-2xl font-bold text-gray-800 mb-2">📋 Upload Preview – Class: {{ class_name }}</h1>
+  <p class="text-sm text-gray-500">Select the row that contains column headers, then choose identity columns.</p>
+</div>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 mb-6 text-sm">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/admin/students/process-flexible">
+  <input type="hidden" name="tmp_path" value="{{ tmp_path }}">
+  <input type="hidden" name="class_id" value="{{ class_id }}">
+
+  <div class="bg-white rounded-2xl shadow overflow-x-auto mb-6">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-2 text-left">Header?</th>
+          <th class="px-4 py-2 text-left">Row #</th>
+          {% for col in range(max_cols) %}
+          <th class="px-4 py-2 text-left">Col {{ col+1 }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="border-t">
+          <td class="px-4 py-2">
+            <input type="radio" name="header_row" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 == 0 }}>
+          </td>
+          <td class="px-4 py-2 font-medium text-gray-600">{{ loop.index0+1 }}</td>
+          {% for cell in row %}
+          <td class="px-4 py-2 text-gray-700">{{ cell if cell is not none else '' }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">First Identity Column</label>
+      <select name="identity_col1" required class="w-full border rounded-lg px-3 py-2 text-sm" id="identity1">
+        <option value="">-- Select --</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Second Identity Column</label>
+      <select name="identity_col2" required class="w-full border rounded-lg px-3 py-2 text-sm" id="identity2">
+        <option value="">-- Select --</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="mb-4">
+    <span class="block text-sm font-medium text-gray-700 mb-2">Mode</span>
+    <label class="inline-flex items-center mr-6">
+      <input type="radio" name="mode" value="replace" checked class="form-radio text-blue-600">
+      <span class="ml-2 text-sm text-gray-700">Replace all students</span>
+    </label>
+    <label class="inline-flex items-center">
+      <input type="radio" name="mode" value="append" class="form-radio text-blue-600">
+      <span class="ml-2 text-sm text-gray-700">Add new / update</span>
+    </label>
+  </div>
+
+  <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-6 rounded-xl">Process Upload</button>
+</form>
+
+<script>
+// Dynamically update identity dropdowns based on selected header row
+const rows = {{ rows | tojson }};
+const headerRadio = document.querySelectorAll('input[name="header_row"]');
+const identity1 = document.getElementById('identity1');
+const identity2 = document.getElementById('identity2');
+
+function updateIdentityOptions(headerIndex) {
+  const headerRow = rows[headerIndex];
+  identity1.innerHTML = '<option value="">-- Select --</option>';
+  identity2.innerHTML = '<option value="">-- Select --</option>';
+  if (headerRow) {
+    headerRow.forEach((cell, idx) => {
+      const val = cell ? cell.toString().trim() : '';
+      if (val) {
+        const option1 = document.createElement('option');
+        option1.value = val;
+        option1.textContent = val;
+        identity1.appendChild(option1);
+        const option2 = document.createElement('option');
+        option2.value = val;
+        option2.textContent = val;
+        identity2.appendChild(option2);
+      }
+    });
+    // Pre-select first two non-empty values
+    const nonEmpty = headerRow.filter(cell => cell && cell.toString().trim() !== '');
+    if (nonEmpty.length >= 1) identity1.value = nonEmpty[0];
+    if (nonEmpty.length >= 2) identity2.value = nonEmpty[1];
+  }
+}
+
+headerRadio.forEach(radio => {
+  radio.addEventListener('change', function() {
+    if (this.checked) {
+      updateIdentityOptions(parseInt(this.value));
+    }
+  });
+});
+
+// Initial load
+const checkedRadio = document.querySelector('input[name="header_row"]:checked');
+if (checkedRadio) {
+  updateIdentityOptions(parseInt(checkedRadio.value));
+}
+</script>
+{% endblock %}

@@ -5,7 +5,7 @@
 {% block content %}
 <div class="mb-8 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white">
   <h1 class="text-3xl font-extrabold">📋 Student Management</h1>
-  <p class="text-slate-400 text-sm mt-2">Upload Excel files to manage class student lists. Dynamic columns supported.</p>
+  <p class="text-slate-400 text-sm mt-2">Upload Excel files or edit student records directly.</p>
 </div>
 
 {% set msg = request.query_params.get("msg") %}
@@ -27,8 +27,9 @@
     {% else %}
     <p class="text-xs text-gray-400 italic">No template uploaded yet</p>
     {% endif %}
-    <div class="mt-auto pt-4">
+    <div class="mt-auto pt-4 flex flex-col gap-2">
       <button onclick="openUploadModal('{{ cls.id }}', '{{ cls.name }}')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 px-4 rounded-xl w-full">Upload Excel</button>
+      <a href="/admin/students/edit?class_id={{ cls.id }}" class="bg-indigo-50 border border-indigo-200 text-indigo-600 hover:bg-indigo-100 text-sm font-semibold py-2 px-4 rounded-xl text-center">Edit Students</a>
     </div>
   </div>
   {% endfor %}

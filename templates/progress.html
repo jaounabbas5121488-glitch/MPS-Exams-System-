@@ -17,6 +17,7 @@
 
 <!-- Stat cards -->
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+  <!-- (same stat cards) -->
   <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">School Open Days</p>
     <p class="text-3xl font-bold text-gray-800 mt-2">{{ stats.total_open_days }}</p>
@@ -83,7 +84,7 @@
   </div>
 </div>
 
-<!-- One pie per month -- a new one appears automatically once a new month begins -->
+<!-- One pie per month -->
 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
   <h2 class="text-lg font-semibold text-gray-800 mb-1">📅 Month-wise Attendance</h2>
   <p class="text-xs text-gray-400 mb-5">One pie chart per month since the session started.</p>
@@ -110,13 +111,9 @@
           <td class="px-4 py-3 text-gray-600">{{ record.check_in_time }}</td>
           <td class="px-4 py-3">
             {% if record.punctuality == "on-time" %}
-            <span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full">
-              On-Time
-            </span>
+            <span class="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full">On-Time</span>
             {% else %}
-            <span class="inline-flex items-center gap-1.5 bg-amber-100 text-amber-700 text-xs font-semibold px-3 py-1 rounded-full">
-              Late
-            </span>
+            <span class="inline-flex items-center gap-1.5 bg-amber-100 text-amber-700 text-xs font-semibold px-3 py-1 rounded-full">Late</span>
             {% endif %}
           </td>
         </tr>
@@ -132,10 +129,42 @@
   {% endif %}
 </div>
 
-<!-- ==================== EXAM RESULTS (TEACHER) ==================== -->
+<!-- ==================== GROUPED EXAM RESULTS (NEW) ==================== -->
 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
-  <h2 class="text-lg font-semibold text-gray-800 mb-4">📊 Exam Results</h2>
-  <div id="examResultsContainer"></div>
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">📊 Exam Results (Test‑wise)</h2>
+  {% if grouped_exam_results %}
+    {% for group in grouped_exam_results %}
+    <div class="mb-6 border rounded-xl overflow-hidden">
+      <div class="bg-gray-50 p-4 flex justify-between items-center cursor-pointer" onclick="this.parentElement.querySelector('.group-body').classList.toggle('hidden')">
+        <h3 class="font-semibold text-gray-700">{{ group.test_type_name }} – {{ group.test_number }}</h3>
+        <span class="text-xs text-gray-500">{{ group.classes|length }} class(es)</span>
+      </div>
+      <div class="group-body p-4">
+        {% for cls in group.classes %}
+        <div class="mb-4">
+          <h4 class="text-sm font-medium text-gray-600 mb-2">{{ cls.class_name }}</h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {% for subj in cls.subjects %}
+            <div class="border rounded-lg p-3 flex flex-col">
+              <p class="text-sm font-medium text-gray-700">{{ subj.subject_name }}</p>
+              <p class="text-xs text-gray-400">Out of {{ subj.total_marks }} | Pass: {{ subj.passing_marks }}</p>
+              <div class="mt-2 flex items-center justify-between text-xs">
+                <span class="text-green-600">{{ subj.pass_count }} Pass</span>
+                <span class="text-red-600">{{ subj.fail_count }} Fail</span>
+                <span>{{ subj.pass_percent }}%</span>
+              </div>
+              <!-- mini chart optional -->
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <p class="text-gray-500 text-sm">No confirmed exam results yet.</p>
+  {% endif %}
 </div>
 <!-- ==================== END EXAM RESULTS ==================== -->
 
@@ -159,9 +188,7 @@
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false }
-      }
+      plugins: { legend: { display: false } }
     }
   });
 
@@ -185,7 +212,6 @@
     }
   });
 
-  // Fixed "whole session" pie -- present vs absent, never resets.
   new Chart(document.getElementById('sessionTotalPie'), {
     type: 'doughnut',
     data: {
@@ -204,11 +230,8 @@
     }
   });
 
-  // One pie per session month -- built dynamically from monthly_breakdown,
-  // so a new card + pie simply appears once a new month's data exists.
   const monthlyBreakdown = {{ monthly_breakdown | tojson }};
   const monthlyPieGrid = document.getElementById('monthlyPieGrid');
-
   monthlyBreakdown.forEach(function (m, idx) {
     const card = document.createElement('div');
     card.className = 'border border-gray-100 rounded-xl p-4 flex flex-col items-center';
@@ -225,7 +248,6 @@
         '<span>Absent: ' + m.absent_days + '</span>' +
       '</div>';
     monthlyPieGrid.appendChild(card);
-
     new Chart(document.getElementById('monthPie' + idx), {
       type: 'doughnut',
       data: {
@@ -244,59 +266,5 @@
       }
     });
   });
-
-  // ---------- EXAM RESULTS CHARTS (new) ----------
-  const examResults = {{ exam_results | tojson }};
-  const examContainer = document.getElementById('examResultsContainer');
-
-  if (examResults && examResults.length > 0) {
-    examResults.forEach((session, sessionIdx) => {
-      const sessionDiv = document.createElement('div');
-      sessionDiv.className = 'mb-6';
-      sessionDiv.innerHTML = `
-        <h3 class="text-md font-semibold text-gray-700 mb-2">${session.class_name} – ${session.test_type_name} ${session.test_number} (${session.conduct_date})</h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="session-${sessionIdx}-charts"></div>
-      `;
-      examContainer.appendChild(sessionDiv);
-      const chartGrid = document.getElementById(`session-${sessionIdx}-charts`);
-
-      session.subjects.forEach((subj, subjIdx) => {
-        const card = document.createElement('div');
-        card.className = 'border border-gray-200 rounded-xl p-4 flex flex-col items-center';
-        const chartId = `examChart_${sessionIdx}_${subjIdx}`;
-        card.innerHTML = `
-          <p class="text-sm font-medium text-gray-700">${subj.subject_name}</p>
-          <p class="text-xs text-gray-400">Teacher: ${subj.teacher_name || 'N/A'} | Pass Marks: ${subj.passing_marks}</p>
-          <div style="width:150px; height:150px; margin: 0 auto;">
-            <canvas id="${chartId}"></canvas>
-          </div>
-          <div class="text-xs mt-1"><span class="text-green-600 font-medium">${subj.pass_count} Pass</span> | <span class="text-red-600 font-medium">${subj.fail_count} Fail</span></div>
-        `;
-        chartGrid.appendChild(card);
-
-        // render chart after canvas is in DOM
-        setTimeout(() => {
-          new Chart(document.getElementById(chartId), {
-            type: 'doughnut',
-            data: {
-              labels: ['Pass', 'Fail'],
-              datasets: [{
-                data: [subj.pass_count, subj.fail_count],
-                backgroundColor: ['#10b981', '#ef4444'],
-                borderWidth: 0
-              }]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: true,
-              plugins: { legend: { display: false } }
-            }
-          });
-        }, 0);
-      });
-    });
-  } else {
-    examContainer.innerHTML = '<p class="text-gray-500 text-sm">No confirmed exam results yet.</p>';
-  }
 </script>
 {% endblock %}

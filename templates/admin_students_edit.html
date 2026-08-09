@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Edit Students – {{ class.name }}{% endblock %}
+{% block main_class %}max-w-6xl mx-auto px-4 py-8{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/admin/students" class="text-indigo-600 text-sm hover:underline">← Back to Student Management</a>
+</div>
+
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <h1 class="text-2xl font-bold text-gray-800 mb-2">👩‍🎓 Edit Students – {{ class.name }}</h1>
+  <p class="text-sm text-gray-500">Click any field to edit, then click Update. Add new student using the form below.</p>
+</div>
+
+{% set msg = request.query_params.get("msg") %}
+{% if msg == "updated" %}<div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">✅ Student updated.</div>
+{% elif msg == "added" %}<div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">✅ Student added.</div>
+{% elif msg == "deleted" %}<div class="bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 mb-6 text-sm">🗑️ Student deleted.</div>
+{% endif %}
+
+<!-- Existing students table -->
+<div class="bg-white rounded-2xl shadow overflow-x-auto mb-8">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-2 text-left">#</th>
+        <th class="px-4 py-2 text-left">Name</th>
+        <th class="px-4 py-2 text-left">Father Name</th>
+        {% for col in extra_columns %}
+        <th class="px-4 py-2 text-left">{{ col }}</th>
+        {% endfor %}
+        <th class="px-4 py-2 text-left">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for student in students %}
+      <tr class="border-t">
+        <td class="px-4 py-2">{{ loop.index }}</td>
+        <form method="post" action="/admin/students/update" class="contents">
+          <input type="hidden" name="student_id" value="{{ student.id }}">
+          <input type="hidden" name="class_id" value="{{ class_id }}">
+          <td class="px-4 py-2">
+            <input type="text" name="name" value="{{ student.name }}" class="w-full border rounded px-2 py-1 text-sm">
+          </td>
+          <td class="px-4 py-2">
+            <input type="text" name="father_name" value="{{ student.father_name }}" class="w-full border rounded px-2 py-1 text-sm">
+          </td>
+          {% for col in extra_columns %}
+          <td class="px-4 py-2">
+            <input type="text" name="extra_data[{{ col }}]" value="{{ student.extra_data.get(col, '') }}" class="w-full border rounded px-2 py-1 text-sm">
+          </td>
+          {% endfor %}
+          <td class="px-4 py-2 flex gap-2">
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">Update</button>
+          </form>
+            <form method="post" action="/admin/students/delete/{{ student.id }}" onsubmit="return confirm('Delete this student?');">
+              <button type="submit" class="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">✕</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Add new student form -->
+<div class="bg-white rounded-2xl shadow p-6">
+  <h2 class="text-lg font-semibold text-gray-800 mb-3">Add New Student</h2>
+  <form method="post" action="/admin/students/add" class="flex flex-wrap items-end gap-3">
+    <input type="hidden" name="class_id" value="{{ class_id }}">
+    <div>
+      <label class="block text-xs text-gray-500">Name</label>
+      <input type="text" name="name" required class="border rounded px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500">Father Name</label>
+      <input type="text" name="father_name" required class="border rounded px-3 py-1.5 text-sm">
+    </div>
+    {% for col in extra_columns %}
+    <div>
+      <label class="block text-xs text-gray-500">{{ col }}</label>
+      <input type="text" name="extra_data[{{ col }}]" class="border rounded px-3 py-1.5 text-sm">
+    </div>
+    {% endfor %}
+    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-xl text-sm">Add Student</button>
+  </form>
+</div>
+{% endblock %}

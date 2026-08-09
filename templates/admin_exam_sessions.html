@@ -3,6 +3,10 @@
 {% block main_class %}max-w-6xl mx-auto px-4 py-10{% endblock %}
 
 {% block content %}
+<div class="mb-6">
+  <a href="/admin" class="text-indigo-600 text-sm hover:underline flex items-center gap-1 font-medium">← Back to Admin Panel</a>
+</div>
+
 <div class="mb-8 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white">
   <h1 class="text-3xl font-extrabold">📝 Exam Sessions</h1>
   <p class="text-slate-400 text-sm mt-2">Create and manage test sessions for each class.</p>
@@ -11,6 +15,8 @@
 {% set msg = request.query_params.get("msg") %}
 {% if msg == "created" %}
 <div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">✅ Exam session created successfully.</div>
+{% elif msg == "deleted" %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 mb-6 text-sm">🗑️ Session deleted.</div>
 {% endif %}
 
 <!-- Create Session Form -->
@@ -53,9 +59,13 @@
       <div class="subject-row flex flex-wrap items-end gap-3 mb-3">
         <div class="flex-1 min-w-[150px]">
           <label class="block text-xs text-gray-500 mb-1">Subject</label>
-          <select name="subject_id_0" class="w-full border rounded-lg px-2 py-2 text-sm">
+          <select name="subject_id_0" class="w-full border rounded-lg px-2 py-2 text-sm subject-select">
             {% for subj in subjects %}
-            <option value="{{ subj.id }}">{{ subj.name }}</option>
+            <option value="{{ subj.id }}"
+              data-default-total="{{ subj.default_total_marks or 25 }}"
+              data-default-pass="{{ subj.default_passing_marks or 10 }}">
+              {{ subj.name }}
+            </option>
             {% endfor %}
           </select>
         </div>
@@ -65,11 +75,11 @@
         </div>
         <div class="w-20">
           <label class="block text-xs text-gray-500 mb-1">Total Marks</label>
-          <input type="number" name="total_marks_0" step="any" value="25" class="w-full border rounded-lg px-2 py-2 text-sm">
+          <input type="number" name="total_marks_0" step="any" value="25" class="w-full border rounded-lg px-2 py-2 text-sm total-marks-input">
         </div>
         <div class="w-20">
           <label class="block text-xs text-gray-500 mb-1">Pass Marks</label>
-          <input type="number" name="passing_marks_0" step="any" value="10" class="w-full border rounded-lg px-2 py-2 text-sm">
+          <input type="number" name="passing_marks_0" step="any" value="10" class="w-full border rounded-lg px-2 py-2 text-sm pass-marks-input">
         </div>
         <button type="button" class="remove-subject text-red-500 hover:text-red-700 text-sm hidden">✕</button>
       </div>
@@ -96,6 +106,7 @@
           <th class="px-4 py-2 text-left">Date</th>
           <th class="px-4 py-2 text-left">Status</th>
           <th class="px-4 py-2 text-left">Subjects</th>
+          <th class="px-4 py-2 text-left">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -115,6 +126,11 @@
             {% endif %}
           </td>
           <td class="px-4 py-2">{{ sess.subject_count }}</td>
+          <td class="px-4 py-2">
+            <form method="post" action="/admin/exam-session/{{ sess.id }}/delete" onsubmit="return confirm('Delete this session?');">
+              <button type="submit" class="text-red-600 hover:text-red-800 text-xs font-medium">🗑️ Delete</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -127,17 +143,46 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+  // Function to update marks based on selected subject
+  function updateMarksFromSubject(subjectSelect, totalInput, passInput) {
+    const selectedOption = subjectSelect.options[subjectSelect.selectedIndex];
+    const defaultTotal = selectedOption.getAttribute('data-default-total');
+    const defaultPass = selectedOption.getAttribute('data-default-pass');
+    if (defaultTotal) totalInput.value = defaultTotal;
+    if (defaultPass) passInput.value = defaultPass;
+  }
+
+  // Attach change event to existing subject selects
+  document.querySelectorAll('.subject-row').forEach(row => {
+    const subjectSelect = row.querySelector('.subject-select');
+    const totalInput = row.querySelector('.total-marks-input');
+    const passInput = row.querySelector('.pass-marks-input');
+    subjectSelect.addEventListener('change', function() {
+      updateMarksFromSubject(subjectSelect, totalInput, passInput);
+    });
+  });
+
   let subjectCount = 1;
   document.getElementById('add-subject').addEventListener('click', function() {
     const container = document.getElementById('subjects-container');
     const template = container.querySelector('.subject-row').cloneNode(true);
-    // Update name attributes for subject, syllabus, total_marks, passing_marks
+    // Update name attributes
     template.querySelectorAll('select, input').forEach(el => {
       if (el.name) {
         el.name = el.name.replace(/_\d+$/, '_' + subjectCount);
       }
       if (el.tagName === 'INPUT') el.value = '';
     });
+    // Attach change event for new row
+    const newSubjectSelect = template.querySelector('.subject-select');
+    const newTotalInput = template.querySelector('.total-marks-input');
+    const newPassInput = template.querySelector('.pass-marks-input');
+    newSubjectSelect.addEventListener('change', function() {
+      updateMarksFromSubject(newSubjectSelect, newTotalInput, newPassInput);
+    });
+    // Reset to first subject's defaults
+    updateMarksFromSubject(newSubjectSelect, newTotalInput, newPassInput);
+
     template.querySelector('.remove-subject').classList.remove('hidden');
     template.querySelector('.remove-subject').addEventListener('click', function() {
       template.remove();

@@ -27,7 +27,6 @@ from database import (
 
 router = APIRouter()
 
-# ─── Helper imports from main ───
 from main import current_user, require_admin, require_login, shift_month, templates
 
 
@@ -255,55 +254,64 @@ async def admin_students_upload(
             os.unlink(tmp.name)
             return RedirectResponse(url="/admin/students?error=empty_file", status_code=303)
 
-        headers = [str(c).strip() for c in rows[0] if c is not None]
-        if len(headers) < 2:
-            os.unlink(tmp.name)
-            return RedirectResponse(url="/admin/students?error=too_few_columns", status_code=303)
+        max_cols = max(len([c for c in row if c is not None]) for row in rows) if rows else 1
+        display_rows = []
+        for row in rows:
+            display_row = []
+            for i in range(max_cols):
+                val = row[i] if i < len(row) else None
+                display_row.append(str(val) if val is not None else "")
+            display_rows.append(display_row)
 
-        request.session["tmp_excel_path"] = tmp.name
-        request.session["tmp_class_id"] = class_id
-        request.session["tmp_mode"] = mode
-        request.session["tmp_headers"] = headers
+        class_row = conn.execute("SELECT name FROM classes WHERE id = ?", (class_id,)).fetchone()
+        class_name = class_row["name"] if class_row else ""
 
-        return templates.TemplateResponse("admin_students_identity.html", {
+        return templates.TemplateResponse("admin_students_upload_preview.html", {
             "request": request,
             "user": user,
             "class_id": class_id,
-            "headers": headers,
+            "class_name": class_name,
+            "tmp_path": tmp.name,
+            "rows": display_rows,
+            "max_cols": max_cols,
         })
     except Exception as e:
         os.unlink(tmp.name)
         return RedirectResponse(url="/admin/students?error=parse_failed", status_code=303)
 
 
-@router.post("/admin/students/process")
-def admin_students_process(
+@router.post("/admin/students/process-flexible")
+async def admin_students_process_flexible(
     request: Request,
+    tmp_path: str = Form(...),
+    class_id: int = Form(...),
+    header_row: int = Form(...),
     identity_col1: str = Form(...),
     identity_col2: str = Form(...),
+    mode: str = Form("replace"),
 ):
     user = require_admin(request)
-    tmp_path = request.session.pop("tmp_excel_path", None)
-    class_id = request.session.pop("tmp_class_id", None)
-    mode = request.session.pop("tmp_mode", "replace")
-    headers = request.session.pop("tmp_headers", [])
-
-    if not tmp_path or not class_id or not os.path.exists(tmp_path):
+    if not tmp_path or not os.path.exists(tmp_path):
         return RedirectResponse(url="/admin/students?error=session_expired", status_code=303)
 
     try:
         wb = load_workbook(tmp_path, read_only=True)
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))
-        headers = [str(c).strip() for c in rows[0] if c is not None]
-
-        idx1 = headers.index(identity_col1) if identity_col1 in headers else -1
-        idx2 = headers.index(identity_col2) if identity_col2 in headers else -1
-        if idx1 == -1 or idx2 == -1:
+        if header_row >= len(rows):
             os.unlink(tmp_path)
-            return RedirectResponse(url="/admin/students?error=invalid_columns", status_code=303)
+            return RedirectResponse(url="/admin/students?error=invalid_header_row", status_code=303)
 
-        extra_cols = [i for i, h in enumerate(headers) if i not in (idx1, idx2)]
+        header_row_data = rows[header_row]
+        headers = [str(c).strip() if c is not None else "" for c in header_row_data]
+        if identity_col1 not in headers or identity_col2 not in headers:
+            os.unlink(tmp_path)
+            return RedirectResponse(url="/admin/students?error=identity_not_found", status_code=303)
+
+        idx1 = headers.index(identity_col1)
+        idx2 = headers.index(identity_col2)
+
+        extra_cols = [i for i, h in enumerate(headers) if i not in (idx1, idx2) and h]
         identity_columns = [identity_col1, identity_col2]
         extra_columns = [headers[i] for i in extra_cols]
 
@@ -312,7 +320,7 @@ def admin_students_process(
             conn.execute("DELETE FROM student_records WHERE class_id = ?", (class_id,))
             conn.execute("DELETE FROM class_templates WHERE class_id = ?", (class_id,))
 
-        for row in rows[1:]:
+        for row in rows[header_row+1:]:
             if not row or all(c is None for c in row):
                 continue
             name = str(row[idx1]).strip() if row[idx1] else ""
@@ -329,7 +337,7 @@ def admin_students_process(
                     (class_id, name, father, json.dumps(extra_data, ensure_ascii=False)),
                 )
             except sqlite3.IntegrityError:
-                pass  # duplicate, skip
+                pass
 
         template_dir = "uploads/class_templates"
         os.makedirs(template_dir, exist_ok=True)
@@ -349,6 +357,109 @@ def admin_students_process(
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
         return RedirectResponse(url="/admin/students?error=process_failed", status_code=303)
+
+
+@router.get("/admin/students/edit", response_class=HTMLResponse)
+def admin_students_edit(request: Request, class_id: int):
+    user = require_admin(request)
+    conn = get_db()
+    cls = conn.execute("SELECT * FROM classes WHERE id = ?", (class_id,)).fetchone()
+    if not cls:
+        conn.close()
+        return RedirectResponse(url="/admin/students?error=class_not_found", status_code=303)
+
+    tpl = conn.execute("SELECT * FROM class_templates WHERE class_id = ?", (class_id,)).fetchone()
+    extra_columns = json.loads(tpl["extra_columns"]) if tpl else []
+    identity_columns = json.loads(tpl["identity_columns"]) if tpl else ["Name", "Father Name"]
+
+    students_raw = conn.execute("""
+        SELECT * FROM student_records WHERE class_id = ? ORDER BY name
+    """, (class_id,)).fetchall()
+    conn.close()
+
+    students = []
+    for s in students_raw:
+        s_dict = dict(s)
+        try:
+            s_dict['extra_data'] = json.loads(s_dict['extra_data']) if s_dict['extra_data'] else {}
+        except (json.JSONDecodeError, TypeError):
+            s_dict['extra_data'] = {}
+        students.append(s_dict)
+
+    return templates.TemplateResponse("admin_students_edit.html", {
+        "request": request,
+        "user": user,
+        "class": dict(cls),
+        "class_id": class_id,
+        "students": students,
+        "extra_columns": extra_columns,
+        "identity_columns": identity_columns,
+    })
+
+
+@router.post("/admin/students/update")
+async def admin_students_update(request: Request):
+    user = require_admin(request)
+    form = await request.form()
+    student_id = int(form.get("student_id"))
+    name = form.get("name", "").strip()
+    father = form.get("father_name", "").strip()
+    class_id = int(form.get("class_id", 0))
+
+    extra_data = {}
+    for key in form.keys():
+        if key.startswith("extra_data[") and key.endswith("]"):
+            col_name = key[len("extra_data["):-1]
+            extra_data[col_name] = form[key].strip()
+
+    conn = get_db()
+    conn.execute("""
+        UPDATE student_records SET name = ?, father_name = ?, extra_data = ?
+        WHERE id = ?
+    """, (name, father, json.dumps(extra_data, ensure_ascii=False), student_id))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url=f"/admin/students/edit?class_id={class_id}&msg=updated", status_code=303)
+
+
+@router.post("/admin/students/add")
+async def admin_students_add(request: Request):
+    user = require_admin(request)
+    form = await request.form()
+    class_id = int(form.get("class_id"))
+    name = form.get("name", "").strip()
+    father = form.get("father_name", "").strip()
+
+    extra_data = {}
+    for key in form.keys():
+        if key.startswith("extra_data[") and key.endswith("]"):
+            col_name = key[len("extra_data["):-1]
+            extra_data[col_name] = form[key].strip()
+
+    conn = get_db()
+    try:
+        conn.execute("""
+            INSERT INTO student_records (class_id, name, father_name, extra_data)
+            VALUES (?, ?, ?, ?)
+        """, (class_id, name, father, json.dumps(extra_data, ensure_ascii=False)))
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return RedirectResponse(url=f"/admin/students/edit?class_id={class_id}&msg=added", status_code=303)
+
+
+@router.post("/admin/students/delete/{student_id}")
+def admin_students_delete(student_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    row = conn.execute("SELECT class_id FROM student_records WHERE id = ?", (student_id,)).fetchone()
+    if row:
+        class_id = row["class_id"]
+        conn.execute("DELETE FROM student_records WHERE id = ?", (student_id,))
+        conn.commit()
+    conn.close()
+    return RedirectResponse(url=f"/admin/students/edit?class_id={class_id}&msg=deleted", status_code=303)
 
 
 # ===================== ADMIN MASTER DATA =====================
@@ -374,10 +485,24 @@ def add_subject(request: Request, name: str = Form(...)):
     user = require_admin(request)
     conn = get_db()
     try:
-        conn.execute("INSERT INTO subjects (name) VALUES (?)", (name.strip(),))
+        conn.execute("INSERT INTO subjects (name, default_total_marks, default_passing_marks) VALUES (?, 25, 10)", (name.strip(),))
         conn.commit()
     except Exception:
         pass
+    conn.close()
+    return RedirectResponse(url="/admin/master-data", status_code=303)
+
+
+@router.post("/admin/master-data/update/subject/{subject_id}")
+async def update_subject_defaults(subject_id: int, request: Request):
+    user = require_admin(request)
+    form = await request.form()
+    total = float(form.get("default_total_marks", 25))
+    passing = float(form.get("default_passing_marks", 10))
+    conn = get_db()
+    conn.execute("UPDATE subjects SET default_total_marks = ?, default_passing_marks = ? WHERE id = ?",
+                 (total, passing, subject_id))
+    conn.commit()
     conn.close()
     return RedirectResponse(url="/admin/master-data", status_code=303)
 
@@ -444,7 +569,7 @@ def admin_exam_sessions(request: Request):
     user = require_admin(request)
     conn = get_db()
     classes = conn.execute("SELECT * FROM classes ORDER BY name").fetchall()
-    subjects = conn.execute("SELECT * FROM subjects ORDER BY name").fetchall()
+    subjects = conn.execute("SELECT id, name, default_total_marks, default_passing_marks FROM subjects ORDER BY name").fetchall()
     test_types = conn.execute("SELECT * FROM test_types ORDER BY name").fetchall()
     sessions = conn.execute("""
         SELECT es.*, c.name as class_name, tt.name as test_type_name,
@@ -627,6 +752,34 @@ def reopen_session(session_id: int, request: Request):
     return RedirectResponse(url="/admin/exam-status?msg=reopened", status_code=303)
 
 
+# ===================== SESSION DELETE =====================
+@router.post("/admin/exam-session/{session_id}/delete")
+def delete_exam_session(session_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    conn.execute("DELETE FROM exam_marks WHERE session_subject_id IN (SELECT id FROM exam_session_subjects WHERE session_id = ?)", (session_id,))
+    conn.execute("DELETE FROM exam_session_subjects WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM session_result_summary WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM exam_sessions WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/exam-sessions?msg=deleted", status_code=303)
+
+
+# ===================== TOGGLE VISIBILITY =====================
+@router.post("/admin/exam-session/{session_id}/toggle-visibility")
+def toggle_visibility(session_id: int, request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    session = conn.execute("SELECT is_visible FROM exam_sessions WHERE id = ?", (session_id,)).fetchone()
+    if session:
+        new_val = 0 if session["is_visible"] else 1
+        conn.execute("UPDATE exam_sessions SET is_visible = ? WHERE id = ?", (new_val, session_id))
+        conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/exam-status?msg=visibility_updated", status_code=303)
+
+
 # ===================== ADMIN EXAM CHARTS PAGE =====================
 @router.get("/admin/exam-session/{session_id}/charts", response_class=HTMLResponse)
 def admin_session_charts(session_id: int, request: Request):
@@ -662,14 +815,57 @@ def admin_session_charts(session_id: int, request: Request):
     })
 
 
-# ===================== ADMIN EXPORT SESSION EXCEL =====================
+# ===================== ADMIN TEST‑WISE RESULTS =====================
+@router.get("/admin/test-results", response_class=HTMLResponse)
+def admin_test_results(request: Request, test_type_id: int | None = None, test_number: str = ""):
+    user = require_admin(request)
+    conn = get_db()
+    test_types = conn.execute("SELECT * FROM test_types ORDER BY name").fetchall()
+    results = []
+    if test_type_id and test_number:
+        sessions = conn.execute("""
+            SELECT es.id, es.class_id, c.name as class_name
+            FROM exam_sessions es
+            JOIN classes c ON c.id = es.class_id
+            WHERE es.test_type_id = ? AND es.test_number = ?
+        """, (test_type_id, test_number.strip())).fetchall()
+
+        for sess in sessions:
+            summary = conn.execute("SELECT * FROM session_result_summary WHERE session_id = ?", (sess["id"],)).fetchone()
+            if summary:
+                total = summary["total_students"]
+                pass_count = summary["overall_pass_count"]
+                fail_count = summary["overall_fail_count"]
+                pass_percent = round((pass_count / total) * 100, 1) if total > 0 else 0
+                results.append({
+                    "class_name": sess["class_name"],
+                    "session_id": sess["id"],
+                    "total_students": total,
+                    "pass_count": pass_count,
+                    "fail_count": fail_count,
+                    "pass_percent": pass_percent,
+                })
+    conn.close()
+    return templates.TemplateResponse("admin_test_results.html", {
+        "request": request,
+        "user": user,
+        "test_types": test_types,
+        "selected_test_type_id": test_type_id,
+        "selected_test_number": test_number,
+        "results": results,
+    })
+
+
+# ===================== ADMIN EXPORT SESSION EXCEL (FIXED) =====================
 @router.get("/admin/exam-session/{session_id}/export")
 def export_session_excel(session_id: int, request: Request):
     user = require_admin(request)
     conn = get_db()
     session = conn.execute("""
-        SELECT es.*, c.name as class_name
-        FROM exam_sessions es JOIN classes c ON c.id = es.class_id
+        SELECT es.*, c.name as class_name, tt.name as test_type_name
+        FROM exam_sessions es
+        JOIN classes c ON c.id = es.class_id
+        JOIN test_types tt ON tt.id = es.test_type_id
         WHERE es.id = ?
     """, (session_id,)).fetchone()
     if not session:
@@ -678,45 +874,203 @@ def export_session_excel(session_id: int, request: Request):
 
     subjects = conn.execute("""
         SELECT ess.*, s.name as subject_name
-        FROM exam_session_subjects ess JOIN subjects s ON s.id = ess.subject_id
+        FROM exam_session_subjects ess
+        JOIN subjects s ON s.id = ess.subject_id
         WHERE ess.session_id = ?
     """, (session_id,)).fetchall()
 
     tpl = conn.execute("SELECT * FROM class_templates WHERE class_id = ?", (session["class_id"],)).fetchone()
     identity_cols = json.loads(tpl["identity_columns"]) if tpl else ["Name", "Father Name"]
+    extra_cols = json.loads(tpl["extra_columns"]) if tpl else []
 
     students = conn.execute("""
         SELECT * FROM student_records WHERE class_id = ? ORDER BY name
     """, (session["class_id"],)).fetchall()
 
+    # Create workbook (use template or fresh)
     if tpl and os.path.exists(tpl["template_filename"]):
         wb = load_workbook(tpl["template_filename"])
         ws = wb.active
-        max_col = ws.max_column
-        col_offset = max_col + 1
     else:
         wb = Workbook()
         ws = wb.active
         ws.title = "Result"
-        for i, col in enumerate(identity_cols, start=1):
-            ws.cell(row=1, column=i, value=col).font = Font(bold=True)
-        col_offset = len(identity_cols) + 1
 
+    bold = Font(bold=True)
+
+    # Clear everything below row 5 to remove old data
+    if ws.max_row > 6:
+        ws.delete_rows(7, ws.max_row - 6)
+
+    # Write session info at top (overwrites first rows)
+    ws.cell(row=1, column=1, value="Session Details").font = bold
+    ws.cell(row=2, column=1, value="Test Type")
+    ws.cell(row=2, column=2, value=session["test_type_name"])
+    ws.cell(row=3, column=1, value="Test Number")
+    ws.cell(row=3, column=2, value=session["test_number"])
+    ws.cell(row=4, column=1, value="Conduct Date")
+    ws.cell(row=4, column=2, value=session["conduct_date"])
+    ws.cell(row=5, column=1, value="Syllabus")
+    ws.cell(row=5, column=2, value=session["syllabus"] or "N/A")
+
+    header_row = 7
+
+    # Write identity + extra column headers starting from column 1
+    col = 1
+    for ic in identity_cols:
+        ws.cell(row=header_row, column=col, value=ic).font = bold
+        col += 1
+    for ec in extra_cols:
+        ws.cell(row=header_row, column=col, value=ec).font = bold
+        col += 1
+
+    start_col = col   # Marks columns start here
+
+    # Subject headers
     for j, subj in enumerate(subjects):
         header = f"{subj['subject_name']} (Out of {subj['total_marks']})"
-        ws.cell(row=1, column=col_offset + j, value=header).font = Font(bold=True)
+        ws.cell(row=header_row, column=start_col + j, value=header).font = bold
 
-    for i, student in enumerate(students, start=2):
-        if not tpl or not os.path.exists(tpl["template_filename"]):
-            ws.cell(row=i, column=1, value=student["name"])
-            ws.cell(row=i, column=2, value=student["father_name"])
+    # Additional columns
+    total_marks_col = start_col + len(subjects)
+    obtained_col = total_marks_col + 1
+    percentage_col = total_marks_col + 2
+    pass_fail_col = total_marks_col + 3
+    ws.cell(row=header_row, column=total_marks_col, value="Total Marks").font = bold
+    ws.cell(row=header_row, column=obtained_col, value="Obtained").font = bold
+    ws.cell(row=header_row, column=percentage_col, value="Percentage").font = bold
+    ws.cell(row=header_row, column=pass_fail_col, value="Pass/Fail").font = bold
+
+    # Write student data
+    student_row = header_row + 1
+    for student in students:
+        col = 1
+        # Identity columns
+        ws.cell(row=student_row, column=col, value=student["name"])
+        col += 1
+        ws.cell(row=student_row, column=col, value=student["father_name"])
+        col += 1
+        # Extra columns
+        extra_data = json.loads(student["extra_data"]) if student["extra_data"] else {}
+        for ec in extra_cols:
+            ws.cell(row=student_row, column=col, value=extra_data.get(ec, ""))
+            col += 1
+
+        student_total_obtained = 0
+        student_total_marks = 0
+        student_sum_passing = 0
         for j, subj in enumerate(subjects):
             mark_row = conn.execute("""
                 SELECT marks_obtained FROM exam_marks
                 WHERE session_subject_id = ? AND student_id = ?
             """, (subj["id"], student["id"])).fetchone()
-            mark_val = mark_row["marks_obtained"] if mark_row else ""
-            ws.cell(row=i, column=col_offset + j, value=mark_val)
+            marks = mark_row["marks_obtained"] if mark_row else 0
+            if marks is None:
+                marks = 0
+            ws.cell(row=student_row, column=start_col + j, value=marks)
+            student_total_obtained += marks
+            student_total_marks += subj["total_marks"]
+            student_sum_passing += subj["passing_marks"]
+
+        ws.cell(row=student_row, column=total_marks_col, value=student_total_marks)
+        ws.cell(row=student_row, column=obtained_col, value=student_total_obtained)
+        percentage = round((student_total_obtained / student_total_marks) * 100, 1) if student_total_marks else 0
+        ws.cell(row=student_row, column=percentage_col, value=percentage)
+        overall_pass = "Pass" if student_total_obtained >= student_sum_passing else "Fail"
+        ws.cell(row=student_row, column=pass_fail_col, value=overall_pass)
+        if overall_pass == "Fail":
+            ws.cell(row=student_row, column=pass_fail_col).font = Font(color="FF0000")
+        student_row += 1
+
+    # ---------- Teacher Summary ----------
+    teacher_summary_start = student_row + 2
+    ws.cell(row=teacher_summary_start, column=1, value="Teacher Summaries").font = bold
+    teacher_summary_start += 1
+
+    teacher_data = {}
+    for subj in subjects:
+        teacher_email = subj["teacher_email"]
+        if not teacher_email:
+            continue
+        if teacher_email not in teacher_data:
+            teacher_name = ""
+            teacher_row = conn.execute("SELECT full_name FROM users WHERE email = ?", (teacher_email,)).fetchone()
+            if teacher_row:
+                teacher_name = teacher_row["full_name"]
+            teacher_data[teacher_email] = {"teacher_name": teacher_name, "subjects": []}
+        marks_rows = conn.execute("""
+            SELECT marks_obtained FROM exam_marks WHERE session_subject_id = ?
+        """, (subj["id"],)).fetchall()
+        pass_count = sum(1 for m in marks_rows if m["marks_obtained"] and m["marks_obtained"] >= subj["passing_marks"])
+        fail_count = len(marks_rows) - pass_count
+        total_students = len(marks_rows)
+        pass_percent = round((pass_count / total_students) * 100, 1) if total_students else 0
+        teacher_data[teacher_email]["subjects"].append({
+            "subject_name": subj["subject_name"],
+            "total_students": total_students,
+            "pass_count": pass_count,
+            "fail_count": fail_count,
+            "pass_percent": pass_percent,
+        })
+
+    if teacher_data:
+        for email, data in teacher_data.items():
+            ws.cell(row=teacher_summary_start, column=1, value=f"Teacher: {data['teacher_name']} ({email})").font = bold
+            teacher_summary_start += 1
+            ws.cell(row=teacher_summary_start, column=1, value="Subject").font = bold
+            ws.cell(row=teacher_summary_start, column=2, value="Total Students").font = bold
+            ws.cell(row=teacher_summary_start, column=3, value="Pass").font = bold
+            ws.cell(row=teacher_summary_start, column=4, value="Fail").font = bold
+            ws.cell(row=teacher_summary_start, column=5, value="Pass %").font = bold
+            teacher_summary_start += 1
+            for s in data["subjects"]:
+                ws.cell(row=teacher_summary_start, column=1, value=s["subject_name"])
+                ws.cell(row=teacher_summary_start, column=2, value=s["total_students"])
+                ws.cell(row=teacher_summary_start, column=3, value=s["pass_count"])
+                ws.cell(row=teacher_summary_start, column=4, value=s["fail_count"])
+                ws.cell(row=teacher_summary_start, column=5, value=s["pass_percent"])
+                teacher_summary_start += 1
+            teacher_summary_start += 1
+
+    # ---------- Class Summary ----------
+    summary = conn.execute("SELECT * FROM session_result_summary WHERE session_id = ?", (session_id,)).fetchone()
+    if summary:
+        total_students = summary["total_students"]
+        overall_pass = summary["overall_pass_count"]
+        overall_fail = summary["overall_fail_count"]
+    else:
+        total_students = len(students)
+        overall_pass = 0
+        for student in students:
+            st_total_obt = 0
+            st_sum_pass = 0
+            for subj in subjects:
+                mark = conn.execute("SELECT marks_obtained FROM exam_marks WHERE session_subject_id = ? AND student_id = ?",
+                                    (subj["id"], student["id"])).fetchone()
+                obt = mark["marks_obtained"] if mark else 0
+                if obt is None:
+                    obt = 0
+                st_total_obt += obt
+                st_sum_pass += subj["passing_marks"]
+            if st_total_obt >= st_sum_pass:
+                overall_pass += 1
+        overall_fail = total_students - overall_pass
+
+    pass_percent = round((overall_pass / total_students) * 100, 1) if total_students else 0
+    class_summary_row = teacher_summary_start + 1
+    ws.cell(row=class_summary_row, column=1, value="Class Summary").font = bold
+    class_summary_row += 1
+    ws.cell(row=class_summary_row, column=1, value="Total Students").font = bold
+    ws.cell(row=class_summary_row, column=2, value=total_students)
+    class_summary_row += 1
+    ws.cell(row=class_summary_row, column=1, value="Pass").font = bold
+    ws.cell(row=class_summary_row, column=2, value=overall_pass)
+    class_summary_row += 1
+    ws.cell(row=class_summary_row, column=1, value="Fail").font = bold
+    ws.cell(row=class_summary_row, column=2, value=overall_fail)
+    class_summary_row += 1
+    ws.cell(row=class_summary_row, column=1, value="Pass %").font = bold
+    ws.cell(row=class_summary_row, column=2, value=pass_percent)
 
     conn.close()
 

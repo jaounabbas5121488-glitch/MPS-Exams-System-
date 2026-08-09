@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Test‑wise Results – Admin{% endblock %}
+{% block main_class %}max-w-6xl mx-auto px-4 py-10{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/admin" class="text-indigo-600 text-sm hover:underline flex items-center gap-1 font-medium">← Back to Admin Panel</a>
+</div>
+
+<div class="mb-8 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white">
+  <h1 class="text-3xl font-extrabold">📊 Test‑wise Results</h1>
+  <p class="text-slate-400 text-sm mt-2">View consolidated pass/fail summary across all classes for a specific test.</p>
+</div>
+
+<form method="get" action="/admin/test-results" class="bg-white rounded-2xl shadow p-6 mb-8 flex flex-wrap items-end gap-4">
+  <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">Test Type</label>
+    <select name="test_type_id" class="border rounded-lg px-3 py-2 text-sm">
+      <option value="">-- Select --</option>
+      {% for tt in test_types %}
+      <option value="{{ tt.id }}" {% if tt.id == selected_test_type_id %}selected{% endif %}>{{ tt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">Test Number</label>
+    <input type="text" name="test_number" value="{{ selected_test_number }}" placeholder="e.g. 1" class="border rounded-lg px-3 py-2 text-sm">
+  </div>
+  <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-6 rounded-xl text-sm">Search</button>
+</form>
+
+{% if results %}
+<div class="bg-white rounded-2xl shadow overflow-hidden">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-3 text-left">Class</th>
+        <th class="px-4 py-3 text-left">Total Students</th>
+        <th class="px-4 py-3 text-left">Pass</th>
+        <th class="px-4 py-3 text-left">Fail</th>
+        <th class="px-4 py-3 text-left">Pass %</th>
+        <th class="px-4 py-3 text-left">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for res in results %}
+      <tr>
+        <td class="px-4 py-2">{{ res.class_name }}</td>
+        <td class="px-4 py-2">{{ res.total_students }}</td>
+        <td class="px-4 py-2 text-green-600">{{ res.pass_count }}</td>
+        <td class="px-4 py-2 text-red-600">{{ res.fail_count }}</td>
+        <td class="px-4 py-2">{{ res.pass_percent }}%</td>
+        <td class="px-4 py-2">
+          <a href="/admin/exam-session/{{ res.session_id }}/charts" class="text-indigo-600 hover:underline text-xs">View Charts</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif selected_test_type_id %}
+<div class="bg-white rounded-2xl shadow p-6 text-center text-gray-500">No confirmed results found for this selection.</div>
+{% endif %}
+{% endblock %}

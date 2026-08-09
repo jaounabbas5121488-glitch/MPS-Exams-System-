@@ -3,9 +3,13 @@
 {% block main_class %}max-w-6xl mx-auto px-4 py-10{% endblock %}
 
 {% block content %}
+<div class="mb-6">
+  <a href="/admin" class="text-indigo-600 text-sm hover:underline flex items-center gap-1 font-medium">← Back to Admin Panel</a>
+</div>
+
 <div class="mb-8 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white">
   <h1 class="text-3xl font-extrabold">📊 Exam Status & Results</h1>
-  <p class="text-slate-400 text-sm mt-2">Monitor submissions, confirm results, and download Excel reports.</p>
+  <p class="text-slate-400 text-sm mt-2">Monitor submissions, confirm results, delete sessions, and control teacher visibility.</p>
 </div>
 
 {% set msg = request.query_params.get("msg") %}
@@ -13,60 +17,98 @@
 <div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">✅ Result confirmed and summary stored.</div>
 {% elif msg == "reopened" %}
 <div class="bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-xl px-5 py-3 mb-6 text-sm">🔄 Session reopened for teachers.</div>
+{% elif msg == "deleted" %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 mb-6 text-sm">🗑️ Session deleted successfully.</div>
+{% elif msg == "visibility_updated" %}
+<div class="bg-blue-50 border border-blue-200 text-blue-700 rounded-xl px-5 py-3 mb-6 text-sm">👁️ Visibility updated.</div>
 {% endif %}
 
+{% set grouped = {} %}
 {% for session in sessions %}
-<div class="bg-white rounded-2xl shadow p-6 mb-6">
-  <div class="flex justify-between items-center mb-4">
-    <div>
-      <h2 class="text-xl font-bold text-gray-800">{{ session.class_name }} – {{ session.test_type_name }} {{ session.test_number }}</h2>
-      <p class="text-sm text-gray-500">Date: {{ session.conduct_date }} | Status: 
-        {% if session.status == 'open' %}<span class="text-green-600">Open</span>
-        {% elif session.status == 'confirmed' %}<span class="text-blue-600">Confirmed</span>
-        {% else %}<span>{{ session.status }}</span>{% endif %}
-      </p>
-    </div>
-    <div class="flex gap-2">
-      {% if session.status == 'open' %}
-      <form method="post" action="/admin/exam-status/confirm/{{ session.id }}">
-        <button class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">Confirm Result</button>
-      </form>
-      {% else %}
-      <form method="post" action="/admin/exam-status/reopen/{{ session.id }}">
-        <button class="bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">Re-open for Teachers</button>
-      </form>
-      {% endif %}
-      <a href="/admin/exam-session/{{ session.id }}/charts" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">View Results</a>
-      <a href="/admin/exam-session/{{ session.id }}/export" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">Download Excel</a>
-    </div>
+  {% set type = session.test_type_name %}
+  {% if type not in grouped %}
+    {% set _ = grouped.update({type: []}) %}
+  {% endif %}
+  {% set _ = grouped[type].append(session) %}
+{% endfor %}
+
+{% for type, session_list in grouped.items() %}
+<div class="bg-white rounded-2xl shadow mb-6 overflow-hidden border border-gray-100">
+  <!-- Accordion Header -->
+  <div class="flex justify-between items-center p-6 bg-gray-50 cursor-pointer" onclick="this.parentElement.querySelector('.accordion-body').classList.toggle('hidden')">
+    <h2 class="text-xl font-bold text-gray-800">📁 {{ type }}</h2>
+    <span class="text-sm text-gray-500">{{ session_list|length }} session(s)</span>
   </div>
 
-  <table class="min-w-full text-sm">
-    <thead class="bg-gray-50">
-      <tr>
-        <th class="px-4 py-2 text-left">Subject</th>
-        <th class="px-4 py-2 text-left">Total Marks</th>
-        <th class="px-4 py-2 text-left">Pass Marks</th>
-        <th class="px-4 py-2 text-left">Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for subj in session.subjects %}
-      <tr class="border-t">
-        <td class="px-4 py-2">{{ subj.subject_name }}</td>
-        <td class="px-4 py-2">{{ subj.total_marks }}</td>
-        <td class="px-4 py-2">{{ subj.passing_marks }}</td>
-        <td class="px-4 py-2">
-          {% if subj.submitted %}
-          <span class="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full">Submitted</span>
+  <!-- Accordion Body -->
+  <div class="accordion-body p-6">
+    {% for session in session_list %}
+    <div class="border border-gray-200 rounded-xl p-4 mb-4 last:mb-0 bg-white">
+      <div class="flex flex-wrap justify-between items-center gap-3 mb-3">
+        <div>
+          <h3 class="font-semibold text-gray-700">{{ session.class_name }} – {{ session.test_type_name }} {{ session.test_number }}</h3>
+          <p class="text-xs text-gray-500">Date: {{ session.conduct_date }} | Status: 
+            {% if session.status == 'open' %}<span class="text-green-600">Open</span>
+            {% elif session.status == 'confirmed' %}<span class="text-blue-600">Confirmed</span>
+            {% else %}<span>{{ session.status }}</span>{% endif %}
+            | Visible to Teachers: 
+            <span class="font-medium">{{ 'Yes' if session.is_visible else 'No' }}</span>
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {% if session.status == 'open' %}
+          <form method="post" action="/admin/exam-status/confirm/{{ session.id }}">
+            <button class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">Confirm</button>
+          </form>
           {% else %}
-          <span class="bg-yellow-100 text-yellow-700 text-xs px-2 py-1 rounded-full">Pending</span>
+          <form method="post" action="/admin/exam-status/reopen/{{ session.id }}">
+            <button class="bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">Re-open</button>
+          </form>
           {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+          <a href="/admin/exam-session/{{ session.id }}/charts" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">Charts</a>
+          <a href="/admin/exam-session/{{ session.id }}/export" class="bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">Excel</a>
+          <!-- Visibility Toggle -->
+          <form method="post" action="/admin/exam-session/{{ session.id }}/toggle-visibility" class="inline">
+            <button type="submit" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+              {{ 'Hide' if session.is_visible else 'Show' }}
+            </button>
+          </form>
+          <!-- Delete Session -->
+          <form method="post" action="/admin/exam-session/{{ session.id }}/delete" onsubmit="return confirm('Permanently delete this session and all related marks?');">
+            <button type="submit" class="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">Delete</button>
+          </form>
+        </div>
+      </div>
+
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-3 py-1.5 text-left">Subject</th>
+            <th class="px-3 py-1.5 text-left">Total Marks</th>
+            <th class="px-3 py-1.5 text-left">Pass Marks</th>
+            <th class="px-3 py-1.5 text-left">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for subj in session.subjects %}
+          <tr class="border-t">
+            <td class="px-3 py-1.5">{{ subj.subject_name }}</td>
+            <td class="px-3 py-1.5">{{ subj.total_marks }}</td>
+            <td class="px-3 py-1.5">{{ subj.passing_marks }}</td>
+            <td class="px-3 py-1.5">
+              {% if subj.submitted %}
+              <span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">Submitted</span>
+              {% else %}
+              <span class="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full">Pending</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  </div>
 </div>
 {% endfor %}
 {% endblock %}
