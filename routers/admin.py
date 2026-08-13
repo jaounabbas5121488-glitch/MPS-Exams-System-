@@ -254,83 +254,49 @@ async def admin_students_upload(
             os.unlink(tmp.name)
             return RedirectResponse(url="/admin/students?error=empty_file", status_code=303)
 
-        max_cols = max(len([c for c in row if c is not None]) for row in rows) if rows else 1
-        display_rows = []
+        clean_rows = []
         for row in rows:
-            display_row = []
-            for i in range(max_cols):
-                val = row[i] if i < len(row) else None
-                display_row.append(str(val) if val is not None else "")
-            display_rows.append(display_row)
+            clean_row = []
+            for cell in row:
+                clean_row.append(str(cell).strip() if cell is not None else "")
+            clean_rows.append(clean_row)
 
-        class_row = conn.execute("SELECT name FROM classes WHERE id = ?", (class_id,)).fetchone()
-        class_name = class_row["name"] if class_row else ""
+        header_idx = -1
+        name_col = -1
+        father_col = -1
+        for i, row in enumerate(clean_rows):
+            lowered = [c.lower() for c in row]
+            if "student name" in lowered and "father name" in lowered:
+                header_idx = i
+                name_col = lowered.index("student name")
+                father_col = lowered.index("father name")
+                break
 
-        return templates.TemplateResponse("admin_students_upload_preview.html", {
-            "request": request,
-            "user": user,
-            "class_id": class_id,
-            "class_name": class_name,
-            "tmp_path": tmp.name,
-            "rows": display_rows,
-            "max_cols": max_cols,
-        })
-    except Exception as e:
-        os.unlink(tmp.name)
-        return RedirectResponse(url="/admin/students?error=parse_failed", status_code=303)
+        if header_idx == -1:
+            os.unlink(tmp.name)
+            return RedirectResponse(url="/admin/students?error=headers_not_found", status_code=303)
 
-
-@router.post("/admin/students/process-flexible")
-async def admin_students_process_flexible(
-    request: Request,
-    tmp_path: str = Form(...),
-    class_id: int = Form(...),
-    header_row: int = Form(...),
-    identity_col1: str = Form(...),
-    identity_col2: str = Form(...),
-    mode: str = Form("replace"),
-):
-    user = require_admin(request)
-    if not tmp_path or not os.path.exists(tmp_path):
-        return RedirectResponse(url="/admin/students?error=session_expired", status_code=303)
-
-    try:
-        wb = load_workbook(tmp_path, read_only=True)
-        ws = wb.active
-        rows = list(ws.iter_rows(values_only=True))
-        if header_row >= len(rows):
-            os.unlink(tmp_path)
-            return RedirectResponse(url="/admin/students?error=invalid_header_row", status_code=303)
-
-        header_row_data = rows[header_row]
-        headers = [str(c).strip() if c is not None else "" for c in header_row_data]
-        if identity_col1 not in headers or identity_col2 not in headers:
-            os.unlink(tmp_path)
-            return RedirectResponse(url="/admin/students?error=identity_not_found", status_code=303)
-
-        idx1 = headers.index(identity_col1)
-        idx2 = headers.index(identity_col2)
-
-        extra_cols = [i for i, h in enumerate(headers) if i not in (idx1, idx2) and h]
-        identity_columns = [identity_col1, identity_col2]
-        extra_columns = [headers[i] for i in extra_cols]
+        extra_cols = []
+        for idx, h in enumerate(clean_rows[header_idx]):
+            if idx == name_col or idx == father_col:
+                continue
+            if h:
+                extra_cols.append((idx, h))
 
         conn = get_db()
         if mode == "replace":
             conn.execute("DELETE FROM student_records WHERE class_id = ?", (class_id,))
             conn.execute("DELETE FROM class_templates WHERE class_id = ?", (class_id,))
 
-        for row in rows[header_row+1:]:
-            if not row or all(c is None for c in row):
-                continue
-            name = str(row[idx1]).strip() if row[idx1] else ""
-            father = str(row[idx2]).strip() if row[idx2] else ""
+        for row in clean_rows[header_idx+1:]:
+            name = row[name_col].strip() if name_col < len(row) else ""
+            father = row[father_col].strip() if father_col < len(row) else ""
             if not name or not father:
                 continue
             extra_data = {}
-            for ci in extra_cols:
-                val = row[ci]
-                extra_data[headers[ci]] = str(val) if val is not None else ""
+            for idx, h in extra_cols:
+                val = row[idx] if idx < len(row) else ""
+                extra_data[h] = val
             try:
                 conn.execute(
                     "INSERT INTO student_records (class_id, name, father_name, extra_data) VALUES (?, ?, ?, ?)",
@@ -342,21 +308,24 @@ async def admin_students_process_flexible(
         template_dir = "uploads/class_templates"
         os.makedirs(template_dir, exist_ok=True)
         perm_path = os.path.join(template_dir, f"class_{class_id}.xlsx")
-        shutil.copy(tmp_path, perm_path)
+        shutil.copy(tmp.name, perm_path)
+
+        identity_columns = [clean_rows[header_idx][name_col], clean_rows[header_idx][father_col]]
+        extra_column_names = [h for _, h in extra_cols]
 
         conn.execute(
             "INSERT OR REPLACE INTO class_templates (class_id, template_filename, identity_columns, extra_columns) VALUES (?, ?, ?, ?)",
-            (class_id, perm_path, json.dumps(identity_columns), json.dumps(extra_columns)),
+            (class_id, perm_path, json.dumps(identity_columns), json.dumps(extra_column_names)),
         )
         conn.commit()
         conn.close()
 
-        os.unlink(tmp_path)
+        os.unlink(tmp.name)
         return RedirectResponse(url="/admin/students?msg=uploaded", status_code=303)
     except Exception as e:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        return RedirectResponse(url="/admin/students?error=process_failed", status_code=303)
+        if os.path.exists(tmp.name):
+            os.unlink(tmp.name)
+        return RedirectResponse(url="/admin/students?error=parse_failed", status_code=303)
 
 
 @router.get("/admin/students/edit", response_class=HTMLResponse)
@@ -816,7 +785,6 @@ def admin_session_charts(session_id: int, request: Request):
 
 
 # ===================== ADMIN TEST‑WISE RESULTS =====================
-# ===================== ADMIN TEST‑WISE RESULTS =====================
 @router.get("/admin/test-results", response_class=HTMLResponse)
 def admin_test_results(request: Request, test_type_id: int | None = None, test_number: str = ""):
     user = require_admin(request)
@@ -862,8 +830,8 @@ def admin_test_results(request: Request, test_type_id: int | None = None, test_n
         "results": results,
     })
 
-# ===================== ADMIN EXPORT SESSION EXCEL (FIXED) =====================
-# ===================== ADMIN EXPORT SESSION EXCEL (FINAL) =====================
+
+# ===================== ADMIN EXPORT SESSION EXCEL (FINAL CLEAN) =====================
 @router.get("/admin/exam-session/{session_id}/export")
 def export_session_excel(session_id: int, request: Request):
     user = require_admin(request)
@@ -1065,58 +1033,6 @@ def export_session_excel(session_id: int, request: Request):
         ws.cell(row=class_start, column=i, value=label).font = bold
         ws.cell(row=class_start, column=i).alignment = center
         ws.cell(row=class_start + 1, column=i, value=val).alignment = center
-
-    conn.close()
-
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    filename = f"result_{session['class_name']}_{session['test_number']}_{date.today().isoformat()}.xlsx"
-    return StreamingResponse(
-        output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-    )
-
-    # ---------- Class Summary ----------
-    summary = conn.execute("SELECT * FROM session_result_summary WHERE session_id = ?", (session_id,)).fetchone()
-    if summary:
-        total_students = summary["total_students"]
-        overall_pass = summary["overall_pass_count"]
-        overall_fail = summary["overall_fail_count"]
-    else:
-        total_students = len(students)
-        overall_pass = 0
-        for student in students:
-            st_total_obt = 0
-            st_sum_pass = 0
-            for subj in subjects:
-                mark = conn.execute("SELECT marks_obtained FROM exam_marks WHERE session_subject_id = ? AND student_id = ?",
-                                    (subj["id"], student["id"])).fetchone()
-                obt = mark["marks_obtained"] if mark else 0
-                if obt is None:
-                    obt = 0
-                st_total_obt += obt
-                st_sum_pass += subj["passing_marks"]
-            if st_total_obt >= st_sum_pass:
-                overall_pass += 1
-        overall_fail = total_students - overall_pass
-
-    pass_percent = round((overall_pass / total_students) * 100, 1) if total_students else 0
-    class_summary_row = teacher_summary_start + 1
-    ws.cell(row=class_summary_row, column=1, value="Class Summary").font = bold
-    class_summary_row += 1
-    ws.cell(row=class_summary_row, column=1, value="Total Students").font = bold
-    ws.cell(row=class_summary_row, column=2, value=total_students)
-    class_summary_row += 1
-    ws.cell(row=class_summary_row, column=1, value="Pass").font = bold
-    ws.cell(row=class_summary_row, column=2, value=overall_pass)
-    class_summary_row += 1
-    ws.cell(row=class_summary_row, column=1, value="Fail").font = bold
-    ws.cell(row=class_summary_row, column=2, value=overall_fail)
-    class_summary_row += 1
-    ws.cell(row=class_summary_row, column=1, value="Pass %").font = bold
-    ws.cell(row=class_summary_row, column=2, value=pass_percent)
 
     conn.close()
 
