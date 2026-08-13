@@ -5,7 +5,7 @@ from io import BytesIO
 from fastapi import APIRouter, Request, Form, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Font, Alignment
 
 from database import (
     get_db,
@@ -247,7 +247,7 @@ async def admin_students_upload(
         tmp.write(content)
         tmp.close()
 
-        wb = load_workbook(tmp.name, read_only=True)
+        wb = load_workbook(tmp.name, read_only=False)
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
@@ -816,19 +816,25 @@ def admin_session_charts(session_id: int, request: Request):
 
 
 # ===================== ADMIN TEST‑WISE RESULTS =====================
+# ===================== ADMIN TEST‑WISE RESULTS =====================
 @router.get("/admin/test-results", response_class=HTMLResponse)
 def admin_test_results(request: Request, test_type_id: int | None = None, test_number: str = ""):
     user = require_admin(request)
     conn = get_db()
     test_types = conn.execute("SELECT * FROM test_types ORDER BY name").fetchall()
     results = []
-    if test_type_id and test_number:
-        sessions = conn.execute("""
-            SELECT es.id, es.class_id, c.name as class_name
+    if test_type_id:
+        query = """
+            SELECT es.id, es.class_id, es.test_number, c.name as class_name
             FROM exam_sessions es
             JOIN classes c ON c.id = es.class_id
-            WHERE es.test_type_id = ? AND es.test_number = ?
-        """, (test_type_id, test_number.strip())).fetchall()
+            WHERE es.test_type_id = ?
+        """
+        params = [test_type_id]
+        if test_number.strip():
+            query += " AND es.test_number = ?"
+            params.append(test_number.strip())
+        sessions = conn.execute(query, params).fetchall()
 
         for sess in sessions:
             summary = conn.execute("SELECT * FROM session_result_summary WHERE session_id = ?", (sess["id"],)).fetchone()
@@ -840,6 +846,7 @@ def admin_test_results(request: Request, test_type_id: int | None = None, test_n
                 results.append({
                     "class_name": sess["class_name"],
                     "session_id": sess["id"],
+                    "test_number": sess["test_number"],
                     "total_students": total,
                     "pass_count": pass_count,
                     "fail_count": fail_count,
@@ -855,8 +862,8 @@ def admin_test_results(request: Request, test_type_id: int | None = None, test_n
         "results": results,
     })
 
-
 # ===================== ADMIN EXPORT SESSION EXCEL (FIXED) =====================
+# ===================== ADMIN EXPORT SESSION EXCEL (FINAL) =====================
 @router.get("/admin/exam-session/{session_id}/export")
 def export_session_excel(session_id: int, request: Request):
     user = require_admin(request)
@@ -880,80 +887,85 @@ def export_session_excel(session_id: int, request: Request):
     """, (session_id,)).fetchall()
 
     tpl = conn.execute("SELECT * FROM class_templates WHERE class_id = ?", (session["class_id"],)).fetchone()
-    identity_cols = json.loads(tpl["identity_columns"]) if tpl else ["Name", "Father Name"]
+    identity_cols = json.loads(tpl["identity_columns"]) if tpl else ["Student Name", "Father Name"]
     extra_cols = json.loads(tpl["extra_columns"]) if tpl else []
 
     students = conn.execute("""
         SELECT * FROM student_records WHERE class_id = ? ORDER BY name
     """, (session["class_id"],)).fetchall()
 
-    # Create workbook (use template or fresh)
-    if tpl and os.path.exists(tpl["template_filename"]):
-        wb = load_workbook(tpl["template_filename"])
-        ws = wb.active
-    else:
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Result"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Result"
 
     bold = Font(bold=True)
+    center = Alignment(horizontal="center", vertical="center")
 
-    # Clear everything below row 5 to remove old data
-    if ws.max_row > 6:
-        ws.delete_rows(7, ws.max_row - 6)
+    # Row 1: School Name
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=10)
+    ws.cell(row=1, column=1, value="Mustafa Public School")
+    ws.cell(row=1, column=1).font = Font(bold=True, size=16)
+    ws.cell(row=1, column=1).alignment = center
 
-    # Write session info at top (overwrites first rows)
-    ws.cell(row=1, column=1, value="Session Details").font = bold
-    ws.cell(row=2, column=1, value="Test Type")
-    ws.cell(row=2, column=2, value=session["test_type_name"])
-    ws.cell(row=3, column=1, value="Test Number")
-    ws.cell(row=3, column=2, value=session["test_number"])
-    ws.cell(row=4, column=1, value="Conduct Date")
-    ws.cell(row=4, column=2, value=session["conduct_date"])
-    ws.cell(row=5, column=1, value="Syllabus")
-    ws.cell(row=5, column=2, value=session["syllabus"] or "N/A")
+    # Row 2: Session Info (compact)
+    info_parts = []
+    if session["class_name"]:
+        info_parts.append(f"Class: {session['class_name']}")
+    if session["test_type_name"]:
+        info_parts.append(f"Test Type: {session['test_type_name']}")
+    if session["test_number"]:
+        info_parts.append(f"Test Number: {session['test_number']}")
+    if session["conduct_date"]:
+        info_parts.append(f"Date: {session['conduct_date']}")
+    if session["syllabus"]:
+        info_parts.append(f"Syllabus: {session['syllabus']}")
 
-    header_row = 7
+    info_text = "   |   ".join(info_parts)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=10)
+    ws.cell(row=2, column=1, value=info_text)
+    ws.cell(row=2, column=1).alignment = center
 
-    # Write identity + extra column headers starting from column 1
+    # Header row
+    header_row = 4
+    all_header_cols = identity_cols + extra_cols
     col = 1
-    for ic in identity_cols:
-        ws.cell(row=header_row, column=col, value=ic).font = bold
-        col += 1
-    for ec in extra_cols:
-        ws.cell(row=header_row, column=col, value=ec).font = bold
+    for h in all_header_cols:
+        ws.cell(row=header_row, column=col, value=h).font = bold
+        ws.cell(row=header_row, column=col).alignment = center
         col += 1
 
-    start_col = col   # Marks columns start here
+    start_col = col
+    for subj in subjects:
+        ws.cell(row=header_row, column=col, value=f"{subj['subject_name']} (Out of {subj['total_marks']})").font = bold
+        ws.cell(row=header_row, column=col).alignment = center
+        col += 1
 
-    # Subject headers
-    for j, subj in enumerate(subjects):
-        header = f"{subj['subject_name']} (Out of {subj['total_marks']})"
-        ws.cell(row=header_row, column=start_col + j, value=header).font = bold
+    total_marks_col = col
+    ws.cell(row=header_row, column=col, value="Total Marks").font = bold
+    ws.cell(row=header_row, column=col).alignment = center
+    col += 1
+    obtained_col = col
+    ws.cell(row=header_row, column=col, value="Obtained").font = bold
+    ws.cell(row=header_row, column=col).alignment = center
+    col += 1
+    percentage_col = col
+    ws.cell(row=header_row, column=col, value="Percentage").font = bold
+    ws.cell(row=header_row, column=col).alignment = center
+    col += 1
+    pass_fail_col = col
+    ws.cell(row=header_row, column=col, value="Pass/Fail").font = bold
+    ws.cell(row=header_row, column=col).alignment = center
 
-    # Additional columns
-    total_marks_col = start_col + len(subjects)
-    obtained_col = total_marks_col + 1
-    percentage_col = total_marks_col + 2
-    pass_fail_col = total_marks_col + 3
-    ws.cell(row=header_row, column=total_marks_col, value="Total Marks").font = bold
-    ws.cell(row=header_row, column=obtained_col, value="Obtained").font = bold
-    ws.cell(row=header_row, column=percentage_col, value="Percentage").font = bold
-    ws.cell(row=header_row, column=pass_fail_col, value="Pass/Fail").font = bold
-
-    # Write student data
     student_row = header_row + 1
     for student in students:
         col = 1
-        # Identity columns
-        ws.cell(row=student_row, column=col, value=student["name"])
+        ws.cell(row=student_row, column=col, value=student["name"]).alignment = center
         col += 1
-        ws.cell(row=student_row, column=col, value=student["father_name"])
+        ws.cell(row=student_row, column=col, value=student["father_name"]).alignment = center
         col += 1
-        # Extra columns
         extra_data = json.loads(student["extra_data"]) if student["extra_data"] else {}
         for ec in extra_cols:
-            ws.cell(row=student_row, column=col, value=extra_data.get(ec, ""))
+            ws.cell(row=student_row, column=col, value=extra_data.get(ec, "")).alignment = center
             col += 1
 
         student_total_obtained = 0
@@ -967,37 +979,40 @@ def export_session_excel(session_id: int, request: Request):
             marks = mark_row["marks_obtained"] if mark_row else 0
             if marks is None:
                 marks = 0
-            ws.cell(row=student_row, column=start_col + j, value=marks)
+            ws.cell(row=student_row, column=start_col + j, value=marks).alignment = center
             student_total_obtained += marks
             student_total_marks += subj["total_marks"]
             student_sum_passing += subj["passing_marks"]
 
-        ws.cell(row=student_row, column=total_marks_col, value=student_total_marks)
-        ws.cell(row=student_row, column=obtained_col, value=student_total_obtained)
+        ws.cell(row=student_row, column=total_marks_col, value=student_total_marks).alignment = center
+        ws.cell(row=student_row, column=obtained_col, value=student_total_obtained).alignment = center
         percentage = round((student_total_obtained / student_total_marks) * 100, 1) if student_total_marks else 0
-        ws.cell(row=student_row, column=percentage_col, value=percentage)
+        ws.cell(row=student_row, column=percentage_col, value=f"{percentage}%").alignment = center
         overall_pass = "Pass" if student_total_obtained >= student_sum_passing else "Fail"
-        ws.cell(row=student_row, column=pass_fail_col, value=overall_pass)
+        ws.cell(row=student_row, column=pass_fail_col, value=overall_pass).alignment = center
         if overall_pass == "Fail":
             ws.cell(row=student_row, column=pass_fail_col).font = Font(color="FF0000")
         student_row += 1
 
-    # ---------- Teacher Summary ----------
-    teacher_summary_start = student_row + 2
-    ws.cell(row=teacher_summary_start, column=1, value="Teacher Summaries").font = bold
-    teacher_summary_start += 1
+    # Teacher Summary (single table)
+    teacher_start = student_row + 2
+    ws.cell(row=teacher_start, column=1, value="Teacher Summary").font = bold
+    teacher_start += 1
 
-    teacher_data = {}
+    teacher_headers = ["Teacher Name", "Subject", "Total Students", "Pass", "Fail", "Pass %"]
+    for i, th in enumerate(teacher_headers, start=1):
+        ws.cell(row=teacher_start, column=i, value=th).font = bold
+        ws.cell(row=teacher_start, column=i).alignment = center
+    teacher_start += 1
+
     for subj in subjects:
         teacher_email = subj["teacher_email"]
         if not teacher_email:
             continue
-        if teacher_email not in teacher_data:
-            teacher_name = ""
-            teacher_row = conn.execute("SELECT full_name FROM users WHERE email = ?", (teacher_email,)).fetchone()
-            if teacher_row:
-                teacher_name = teacher_row["full_name"]
-            teacher_data[teacher_email] = {"teacher_name": teacher_name, "subjects": []}
+        teacher_name = ""
+        teacher_row = conn.execute("SELECT full_name FROM users WHERE email = ?", (teacher_email,)).fetchone()
+        if teacher_row:
+            teacher_name = teacher_row["full_name"]
         marks_rows = conn.execute("""
             SELECT marks_obtained FROM exam_marks WHERE session_subject_id = ?
         """, (subj["id"],)).fetchall()
@@ -1005,32 +1020,63 @@ def export_session_excel(session_id: int, request: Request):
         fail_count = len(marks_rows) - pass_count
         total_students = len(marks_rows)
         pass_percent = round((pass_count / total_students) * 100, 1) if total_students else 0
-        teacher_data[teacher_email]["subjects"].append({
-            "subject_name": subj["subject_name"],
-            "total_students": total_students,
-            "pass_count": pass_count,
-            "fail_count": fail_count,
-            "pass_percent": pass_percent,
-        })
 
-    if teacher_data:
-        for email, data in teacher_data.items():
-            ws.cell(row=teacher_summary_start, column=1, value=f"Teacher: {data['teacher_name']} ({email})").font = bold
-            teacher_summary_start += 1
-            ws.cell(row=teacher_summary_start, column=1, value="Subject").font = bold
-            ws.cell(row=teacher_summary_start, column=2, value="Total Students").font = bold
-            ws.cell(row=teacher_summary_start, column=3, value="Pass").font = bold
-            ws.cell(row=teacher_summary_start, column=4, value="Fail").font = bold
-            ws.cell(row=teacher_summary_start, column=5, value="Pass %").font = bold
-            teacher_summary_start += 1
-            for s in data["subjects"]:
-                ws.cell(row=teacher_summary_start, column=1, value=s["subject_name"])
-                ws.cell(row=teacher_summary_start, column=2, value=s["total_students"])
-                ws.cell(row=teacher_summary_start, column=3, value=s["pass_count"])
-                ws.cell(row=teacher_summary_start, column=4, value=s["fail_count"])
-                ws.cell(row=teacher_summary_start, column=5, value=s["pass_percent"])
-                teacher_summary_start += 1
-            teacher_summary_start += 1
+        ws.cell(row=teacher_start, column=1, value=teacher_name).alignment = center
+        ws.cell(row=teacher_start, column=2, value=subj["subject_name"]).alignment = center
+        ws.cell(row=teacher_start, column=3, value=total_students).alignment = center
+        ws.cell(row=teacher_start, column=4, value=pass_count).alignment = center
+        ws.cell(row=teacher_start, column=5, value=fail_count).alignment = center
+        ws.cell(row=teacher_start, column=6, value=f"{pass_percent}%").alignment = center
+        teacher_start += 1
+
+    # Class Summary
+    summary = conn.execute("SELECT * FROM session_result_summary WHERE session_id = ?", (session_id,)).fetchone()
+    if summary:
+        total_students = summary["total_students"]
+        overall_pass = summary["overall_pass_count"]
+        overall_fail = summary["overall_fail_count"]
+    else:
+        total_students = len(students)
+        overall_pass = 0
+        for student in students:
+            st_total_obt = 0
+            st_sum_pass = 0
+            for subj in subjects:
+                mark = conn.execute("SELECT marks_obtained FROM exam_marks WHERE session_subject_id = ? AND student_id = ?",
+                                    (subj["id"], student["id"])).fetchone()
+                obt = mark["marks_obtained"] if mark else 0
+                if obt is None:
+                    obt = 0
+                st_total_obt += obt
+                st_sum_pass += subj["passing_marks"]
+            if st_total_obt >= st_sum_pass:
+                overall_pass += 1
+        overall_fail = total_students - overall_pass
+
+    pass_percent = round((overall_pass / total_students) * 100, 1) if total_students else 0
+    class_start = teacher_start + 2
+    ws.merge_cells(start_row=class_start, start_column=1, end_row=class_start, end_column=6)
+    ws.cell(row=class_start, column=1, value="Class Summary").font = bold
+    ws.cell(row=class_start, column=1).alignment = center
+    class_start += 1
+    labels = ["Total Students", "Pass", "Fail", "Pass %"]
+    values = [total_students, overall_pass, overall_fail, f"{pass_percent}%"]
+    for i, (label, val) in enumerate(zip(labels, values), start=1):
+        ws.cell(row=class_start, column=i, value=label).font = bold
+        ws.cell(row=class_start, column=i).alignment = center
+        ws.cell(row=class_start + 1, column=i, value=val).alignment = center
+
+    conn.close()
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f"result_{session['class_name']}_{session['test_number']}_{date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
     # ---------- Class Summary ----------
     summary = conn.execute("SELECT * FROM session_result_summary WHERE session_id = ?", (session_id,)).fetchone()
