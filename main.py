@@ -15,6 +15,9 @@ templates = Jinja2Templates(directory="templates")
 @app.on_event("startup")
 def startup():
     init_db()
+    # NEW: initialize test generation tables
+    from services.test_generation_db import init_test_generation_db
+    init_test_generation_db()
 
 
 # ─── Helper functions (used by routers) ───
@@ -51,8 +54,9 @@ def shift_month(year: int, month: int, delta: int):
 
 
 # ─── Include routers ───
-from routers import auth, admin, teacher
+from routers import auth, admin, teacher, test_generation
 
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(teacher.router)
+app.include_router(test_generation.router)

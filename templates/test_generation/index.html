@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Test Generation – MPS Exams System{% endblock %}
+{% block main_class %}max-w-6xl mx-auto px-4 py-10{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  {% if user.role == 'admin' %}
+  <a href="/admin" class="text-indigo-600 text-sm hover:underline">← Back to Admin Panel</a>
+  {% else %}
+  <a href="/dashboard" class="text-indigo-600 text-sm hover:underline">← Back to Dashboard</a>
+  {% endif %}
+</div>
+
+<div class="bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white mb-8">
+  <h1 class="text-3xl font-extrabold">🧪 Test Generation</h1>
+  <p class="text-slate-400 text-sm mt-2">Question bank, syllabus blocks, test generation, and history – all in one place.</p>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+  <!-- Syllabus Setting (admin only) -->
+  {% if user.role == 'admin' %}
+  <a href="/test-generation/syllabus-setting" class="bg-white rounded-2xl shadow p-6 flex flex-col hover:shadow-lg transition group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">🗂️</span>
+      <h3 class="text-lg font-semibold text-gray-800 group-hover:text-indigo-700 transition">Syllabus Setting</h3>
+    </div>
+    <p class="text-sm text-gray-500">Define class, subject, and syllabus blocks.</p>
+    <span class="mt-auto text-xs text-indigo-600 mt-3">Open →</span>
+  </a>
+  {% endif %}
+
+  <!-- Question Bank -->
+  <a href="/test-generation/question-bank" class="bg-white rounded-2xl shadow p-6 flex flex-col hover:shadow-lg transition group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">📝</span>
+      <h3 class="text-lg font-semibold text-gray-800 group-hover:text-indigo-700 transition">Question Bank</h3>
+    </div>
+    <p class="text-sm text-gray-500">Add, edit, delete questions (MCQs, short, long, comprehension).</p>
+    <span class="mt-auto text-xs text-indigo-600 mt-3">Open →</span>
+  </a>
+
+  <!-- Generate Test -->
+  <a href="/test-generation/generate" class="bg-white rounded-2xl shadow p-6 flex flex-col hover:shadow-lg transition group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">🖨️</span>
+      <h3 class="text-lg font-semibold text-gray-800 group-hover:text-indigo-700 transition">Generate Test</h3>
+    </div>
+    <p class="text-sm text-gray-500">Set parameters and download test paper (Word/Excel).</p>
+    <span class="mt-auto text-xs text-indigo-600 mt-3">Open →</span>
+  </a>
+
+  <!-- Permissions (admin only) -->
+  {% if user.role == 'admin' %}
+  <a href="/test-generation/permissions" class="bg-white rounded-2xl shadow p-6 flex flex-col hover:shadow-lg transition group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">🔐</span>
+      <h3 class="text-lg font-semibold text-gray-800 group-hover:text-indigo-700 transition">Permissions</h3>
+    </div>
+    <p class="text-sm text-gray-500">Allow/deny teacher access to test generation.</p>
+    <span class="mt-auto text-xs text-indigo-600 mt-3">Open →</span>
+  </a>
+  {% endif %}
+
+  <!-- History -->
+  <a href="/test-generation/history" class="bg-white rounded-2xl shadow p-6 flex flex-col hover:shadow-lg transition group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">📜</span>
+      <h3 class="text-lg font-semibold text-gray-800 group-hover:text-indigo-700 transition">History</h3>
+    </div>
+    <p class="text-sm text-gray-500">Previously generated tests & answer keys.</p>
+    <span class="mt-auto text-xs text-indigo-600 mt-3">Open →</span>
+  </a>
+</div>
+{% endblock %}

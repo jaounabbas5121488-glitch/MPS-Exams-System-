@@ -38,7 +38,6 @@ def dashboard(request: Request):
     official_check_in_display = format_time_display(get_official_check_in_time(conn))
 
     # ────── Teacher Quick Stats ──────
-    # Total confirmed sessions where teacher has at least one subject
     total_tests = conn.execute("""
         SELECT COUNT(DISTINCT es.id)
         FROM exam_sessions es
@@ -46,7 +45,6 @@ def dashboard(request: Request):
         WHERE ess.teacher_email = ? AND es.status = 'confirmed'
     """, (user["email"],)).fetchone()[0] or 0
 
-    # Total unique students taught (across all confirmed sessions)
     total_students = conn.execute("""
         SELECT COUNT(DISTINCT em.student_id)
         FROM exam_marks em
@@ -55,7 +53,6 @@ def dashboard(request: Request):
         WHERE ess.teacher_email = ? AND es.status = 'confirmed'
     """, (user["email"],)).fetchone()[0] or 0
 
-    # Average pass% across all subjects
     avg_pass = conn.execute("""
         SELECT AVG(pass_pct) FROM (
             SELECT 
@@ -69,6 +66,10 @@ def dashboard(request: Request):
     """, (user["email"],)).fetchone()[0]
     avg_pass = round(avg_pass, 1) if avg_pass else 0
 
+    # Test Generation permission
+    perm = conn.execute("SELECT allow_teachers FROM test_permissions WHERE id = 1").fetchone()
+    test_gen_allowed = bool(perm and perm["allow_teachers"])
+
     conn.close()
 
     return templates.TemplateResponse("dashboard.html", {
@@ -81,6 +82,7 @@ def dashboard(request: Request):
         "total_tests": total_tests,
         "total_students": total_students,
         "avg_pass": avg_pass,
+        "test_gen_allowed": test_gen_allowed,
     })
 
 

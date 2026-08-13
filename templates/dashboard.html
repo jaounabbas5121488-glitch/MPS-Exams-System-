@@ -89,6 +89,21 @@
     {% endif %}
   </div>
 
+  {% if test_gen_allowed %}
+  <a href="/test-generation" class="bg-white rounded-2xl shadow hover:shadow-md transition p-6 flex flex-col group">
+    <div class="flex items-center gap-4 mb-4">
+      <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center text-2xl">🧪</div>
+      <div>
+        <h2 class="font-bold text-gray-800 text-lg group-hover:text-orange-700 transition">Test Generation</h2>
+        <p class="text-gray-500 text-xs">Question bank & generate tests</p>
+      </div>
+    </div>
+    <span class="inline-block mt-auto text-xs bg-orange-100 text-orange-600 font-semibold px-3 py-1 rounded-full w-fit">
+      Open →
+    </span>
+  </a>
+  {% endif %}
+
   <a href="/profile" class="bg-white rounded-2xl shadow hover:shadow-md transition p-6 flex flex-col group">
     <div class="flex items-center gap-4 mb-4">
       <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center text-2xl">👤</div>

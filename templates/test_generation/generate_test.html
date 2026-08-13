@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Generate Test{% endblock %}
+{% block main_class %}max-w-6xl mx-auto px-4 py-8{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/admin" class="text-indigo-600 text-sm hover:underline">← Back to Admin Panel</a>
+</div>
+
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <h1 class="text-2xl font-bold text-gray-800 mb-2">🖨️ Generate Test</h1>
+  <p class="text-sm text-gray-500">Select parameters and download test paper.</p>
+</div>
+
+{% set error = request.query_params.get("error") %}
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 mb-6 text-sm">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/test-generation/generate/download" class="bg-white rounded-2xl shadow p-6 space-y-6">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Class</label>
+      <select name="class_id" required class="w-full border rounded-lg px-3 py-2 text-sm" id="classSelect" onchange="this.form.submit()">
+        <option value="">-- Select --</option>
+        {% for cls in classes %}
+        <option value="{{ cls.id }}">{{ cls.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+      <select name="subject_id" required class="w-full border rounded-lg px-3 py-2 text-sm">
+        <option value="">-- Select --</option>
+        {% for subj in subjects %}
+        <option value="{{ subj.id }}">{{ subj.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="md:col-span-2">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Syllabus Blocks (multi‑select)</label>
+      <select name="block_ids" multiple required class="w-full border rounded-lg px-3 py-2 text-sm" size="4">
+        {% for block in blocks %}
+        <option value="{{ block.id }}">{{ block.class_name }} - {{ block.subject_name }} - {{ block.block_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Total Marks</label>
+      <input type="number" name="total_marks" step="any" required class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Number of MCQs</label>
+      <input type="number" name="mcq_count" min="0" value="0" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Marks per MCQ</label>
+      <input type="number" name="mcq_marks" step="any" value="1" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Number of Comprehensions</label>
+      <input type="number" name="comp_count" min="0" value="0" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Number of Short Questions</label>
+      <input type="number" name="short_count" min="0" value="0" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Marks per Short</label>
+      <input type="number" name="short_marks" step="any" value="2" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Number of Long Questions</label>
+      <input type="number" name="long_count" min="0" value="0" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Marks per Long</label>
+      <input type="number" name="long_marks" step="any" value="4" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Page Size</label>
+      <select name="page_size" class="w-full border rounded-lg px-3 py-2 text-sm">
+        <option value="A4">A4</option>
+        <option value="Legal">Legal</option>
+        <option value="Letter">Letter</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Font Size</label>
+      <input type="number" name="font_size" value="10" min="6" max="16" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Number of Pages</label>
+      <input type="number" name="num_pages" value="1" min="1" max="10" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Output Format</label>
+      <select name="output_format" class="w-full border rounded-lg px-3 py-2 text-sm">
+        <option value="docx">Word (.docx)</option>
+        <option value="xlsx">Excel (.xlsx)</option>
+      </select>
+    </div>
+  </div>
+
+  <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-xl text-sm">Generate & Download</button>
+</form>
+{% endblock %}

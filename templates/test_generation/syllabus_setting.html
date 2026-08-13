@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Syllabus Setting{% endblock %}
+{% block main_class %}max-w-6xl mx-auto px-4 py-8{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/admin" class="text-indigo-600 text-sm hover:underline">← Back to Admin Panel</a>
+</div>
+
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <h1 class="text-2xl font-bold text-gray-800 mb-2">🗂️ Syllabus Setting</h1>
+  <p class="text-sm text-gray-500">Define class, subject, and syllabus blocks for question bank.</p>
+</div>
+
+{% set msg = request.query_params.get("msg") %}
+{% if msg == "added" %}
+<div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">✅ Block added.</div>
+{% elif msg == "deleted" %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-3 mb-6 text-sm">🗑️ Block deleted.</div>
+{% endif %}
+
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">Add New Block</h2>
+  <form method="post" action="/test-generation/syllabus-setting/add" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Class</label>
+      <select name="class_id" required class="w-full border rounded-lg px-3 py-2 text-sm">
+        {% for cls in classes %}
+        <option value="{{ cls.id }}">{{ cls.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+      <select name="subject_id" required class="w-full border rounded-lg px-3 py-2 text-sm">
+        {% for subj in subjects %}
+        <option value="{{ subj.id }}">{{ subj.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Block Name</label>
+      <input type="text" name="block_name" placeholder="e.g., Chapter 1 - First Half" required class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div class="md:col-span-3">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-6 rounded-xl text-sm">Add Block</button>
+    </div>
+  </form>
+</div>
+
+<div class="bg-white rounded-2xl shadow overflow-x-auto">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-2 text-left">Class</th>
+        <th class="px-4 py-2 text-left">Subject</th>
+        <th class="px-4 py-2 text-left">Block Name</th>
+        <th class="px-4 py-2 text-left">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for block in blocks %}
+      <tr class="border-t">
+        <td class="px-4 py-2">{{ block.class_name }}</td>
+        <td class="px-4 py-2">{{ block.subject_name }}</td>
+        <td class="px-4 py-2">{{ block.block_name }}</td>
+        <td class="px-4 py-2">
+          <form method="post" action="/test-generation/syllabus-setting/delete/{{ block.id }}" onsubmit="return confirm('Delete this block and its questions?');">
+            <button type="submit" class="text-red-600 hover:text-red-800 text-xs font-medium">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
