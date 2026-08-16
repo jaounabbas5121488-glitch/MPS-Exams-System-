@@ -6,6 +6,8 @@
   <title>{% block title %}MPS Exams System{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="/static/custom.css">
+  <link rel="stylesheet" href="/test-generation/fonts.css">
   <style>body { font-family: 'Inter', sans-serif; }</style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -13,7 +15,12 @@
   {% if user is defined and user %}
   <nav class="bg-blue-700 shadow-md">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-      <span class="text-white text-xl font-bold tracking-wide">🏫 MPS Exams System</span>
+      <div class="flex items-center gap-3">
+  <div class="inline-flex items-center justify-center w-12 h-12 bg-white rounded-full shadow-md overflow-hidden">
+    <img src="/static/logo.png" alt="MPS Logo" class="w-full h-full object-contain">
+  </div>
+  <span class="text-white text-xl font-bold tracking-wide">MPS Exams System</span>
+</div>
       <div class="flex items-center gap-4">
         <span class="text-blue-200 text-sm">{{ user.full_name }}</span>
         <a href="/logout" class="bg-white text-blue-700 text-sm font-semibold px-4 py-1.5 rounded-full hover:bg-blue-50 transition">Logout</a>

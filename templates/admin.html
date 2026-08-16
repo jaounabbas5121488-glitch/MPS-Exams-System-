@@ -5,7 +5,12 @@
 {% block content %}
 <div class="mb-10 bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white flex flex-col md:flex-row md:items-center md:justify-between gap-4 border border-slate-800">
   <div>
-    <h1 class="text-3xl font-extrabold tracking-tight">MPS Admin Panel</h1>
+    <div class="flex items-center gap-3">
+  <div class="inline-flex items-center justify-center w-14 h-14 bg-white rounded-full shadow-md overflow-hidden">
+    <img src="/static/logo.png" alt="MPS Logo" class="w-full h-full object-contain">
+  </div>
+  <h1 class="text-3xl font-extrabold tracking-tight">MPS Admin Panel</h1>
+</div>
     <p class="text-slate-400 text-sm mt-1">Manage institutional schedules, teacher credentials, and system settings efficiently.</p>
   </div>
   <div class="inline-flex items-center gap-2 bg-slate-800/80 border border-slate-700 px-4 py-2 rounded-xl text-xs font-medium text-slate-300">
@@ -20,7 +25,7 @@
 </div>
 {% endif %}
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
   <div class="bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-xl flex flex-col justify-between text-white">
     <div>
       <div class="flex items-center justify-between mb-4">
@@ -65,6 +70,16 @@
       </button>
     </form>
   </div>
+
+  <a href="/admin/session-settings" class="bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-xl flex flex-col justify-between text-white hover:border-cyan-500/50 transition group">
+    <div>
+      <h2 class="text-lg font-bold flex items-center gap-2 mb-2">🗓️ Session Settings</h2>
+      <p class="text-sm text-slate-400 mb-4">
+        Set academic session start and end dates for total attendance calculation.
+      </p>
+    </div>
+    <span class="text-xs text-cyan-400 group-hover:text-cyan-300 mt-4">Open Settings →</span>
+  </a>
 </div>
 
 <!-- ================= SCHOOL CALENDAR ================= -->
@@ -263,7 +278,7 @@
 <!-- ================= EXAM MANAGEMENT SECTION ================= -->
 <div class="mb-10">
   <h2 class="text-xl font-bold text-white mb-4">📚 Exam Management</h2>
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
     <a href="/admin/students" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col hover:border-cyan-500/50 hover:shadow-cyan-900/20 transition group">
       <div class="flex items-center gap-3 mb-3">
         <span class="text-3xl">👩‍🎓</span>
@@ -296,18 +311,50 @@
       <p class="text-sm text-slate-400">View submissions, confirm results, download Excel.</p>
       <span class="mt-3 text-xs text-cyan-400 group-hover:text-cyan-300">Open →</span>
     </a>
-    <!-- NEW CARD: Test Results -->
     <a href="/admin/test-results" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col hover:border-cyan-500/50 hover:shadow-cyan-900/20 transition group">
       <div class="flex items-center gap-3 mb-3">
         <span class="text-3xl">📈</span>
         <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition">Test Results</h3>
       </div>
-      <p class="text-sm text-slate-400">Class‑wise consolidated test results.</p>
+      <p class="text-sm text-slate-400">Class-wise consolidated test results.</p>
       <span class="mt-3 text-xs text-cyan-400 group-hover:text-cyan-300">Open →</span>
     </a>
   </div>
 </div>
 <!-- ================= END EXAM MANAGEMENT SECTION ================= -->
+
+<!-- ================= SMS MANAGEMENT SECTION ================= -->
+<div class="mb-10">
+  <h2 class="text-xl font-bold text-white mb-4">📱 SMS Management</h2>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    <a href="/admin/sms-templates" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col hover:border-cyan-500/50 hover:shadow-cyan-900/20 transition group">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-3xl">📝</span>
+        <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition">SMS Templates</h3>
+      </div>
+      <p class="text-sm text-slate-400">Define percentage-wise custom messages.</p>
+      <span class="mt-3 text-xs text-cyan-400 group-hover:text-cyan-300">Open →</span>
+    </a>
+    <a href="/admin/sms-settings" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col hover:border-cyan-500/50 hover:shadow-cyan-900/20 transition group">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-3xl">📡</span>
+        <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition">SMS Settings</h3>
+      </div>
+      <p class="text-sm text-slate-400">Configure SMS gateway URL.</p>
+      <span class="mt-3 text-xs text-cyan-400 group-hover:text-cyan-300">Open →</span>
+    </a>
+    <a href="/admin/sms-send" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col hover:border-cyan-500/50 hover:shadow-cyan-900/20 transition group">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-3xl">📤</span>
+        <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition">Send Result SMS</h3>
+      </div>
+      <p class="text-sm text-slate-400">Send marks to fathers per confirmed session.</p>
+      <span class="mt-3 text-xs text-cyan-400 group-hover:text-cyan-300">Open →</span>
+    </a>
+  </div>
+</div>
+<!-- ================= END SMS MANAGEMENT SECTION ================= -->
+
 <!-- ================= TEST GENERATION SECTION ================= -->
 <div class="mb-10">
   <h2 class="text-xl font-bold text-white mb-4">🧪 Test Generation</h2>
@@ -323,6 +370,7 @@
   </div>
 </div>
 <!-- ================= END TEST GENERATION SECTION ================= -->
+
 <!-- ================= OVERALL PROGRESS GRAPH ================= -->
 <div class="bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-xl text-white">
   <h2 class="text-lg font-bold flex items-center gap-2 mb-2">📊 Overall Teacher Attendance — Month by Month</h2>

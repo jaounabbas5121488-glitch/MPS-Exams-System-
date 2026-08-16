@@ -23,6 +23,7 @@ from database import (
     get_school_calendar_events,
     count_total_open_days_marked,
     set_setting,
+    get_setting,
 )
 
 router = APIRouter()
@@ -204,7 +205,7 @@ def admin_teacher_reports(teacher_id: int, request: Request, year: int | None = 
 
 # ===================== ADMIN STUDENT MANAGEMENT =====================
 @router.get("/admin/students", response_class=HTMLResponse)
-def admin_students(request: Request):
+def admin_students(request: Request, class_id: int | None = None):
     user = require_admin(request)
     conn = get_db()
     classes = conn.execute("SELECT * FROM classes ORDER BY name").fetchall()
@@ -219,12 +220,23 @@ def admin_students(request: Request):
                 "identity_columns": json.loads(tpl["identity_columns"]),
                 "extra_columns": json.loads(tpl["extra_columns"]),
             }
+
+    selected_class_id = class_id or (classes[0]["id"] if classes else None)
+    students = []
+    if selected_class_id:
+        students_raw = conn.execute("""
+            SELECT * FROM student_records WHERE class_id = ? ORDER BY name
+        """, (selected_class_id,)).fetchall()
+        students = [dict(s) for s in students_raw]
+
     conn.close()
     return templates.TemplateResponse("admin_students.html", {
         "request": request,
         "user": user,
         "classes": classes,
         "templates_info": templates_info,
+        "selected_class_id": selected_class_id,
+        "students": students,
     })
 
 
@@ -264,12 +276,18 @@ async def admin_students_upload(
         header_idx = -1
         name_col = -1
         father_col = -1
+        phone_col = -1
         for i, row in enumerate(clean_rows):
             lowered = [c.lower() for c in row]
             if "student name" in lowered and "father name" in lowered:
                 header_idx = i
                 name_col = lowered.index("student name")
                 father_col = lowered.index("father name")
+                # Detect phone column (case-insensitive)
+                for j, h in enumerate(lowered):
+                    if any(key in h for key in ["phone", "mobile", "contact"]):
+                        phone_col = j
+                        break
                 break
 
         if header_idx == -1:
@@ -278,7 +296,7 @@ async def admin_students_upload(
 
         extra_cols = []
         for idx, h in enumerate(clean_rows[header_idx]):
-            if idx == name_col or idx == father_col:
+            if idx == name_col or idx == father_col or idx == phone_col:
                 continue
             if h:
                 extra_cols.append((idx, h))
@@ -293,14 +311,24 @@ async def admin_students_upload(
             father = row[father_col].strip() if father_col < len(row) else ""
             if not name or not father:
                 continue
+            phone = ""
+            if phone_col != -1 and phone_col < len(row):
+                phone = str(row[phone_col]).strip()
+                # Normalize phone to +92XXXXXXXXXX
+                phone = phone.replace(" ", "").replace("-", "")
+                if phone and not phone.startswith("+92"):
+                    if phone.startswith("0"):
+                        phone = "+92" + phone[1:]
+                    else:
+                        phone = "+92" + phone
             extra_data = {}
             for idx, h in extra_cols:
                 val = row[idx] if idx < len(row) else ""
                 extra_data[h] = val
             try:
                 conn.execute(
-                    "INSERT INTO student_records (class_id, name, father_name, extra_data) VALUES (?, ?, ?, ?)",
-                    (class_id, name, father, json.dumps(extra_data, ensure_ascii=False)),
+                    "INSERT INTO student_records (class_id, name, father_name, phone, extra_data) VALUES (?, ?, ?, ?, ?)",
+                    (class_id, name, father, phone, json.dumps(extra_data, ensure_ascii=False)),
                 )
             except sqlite3.IntegrityError:
                 pass
@@ -374,6 +402,13 @@ async def admin_students_update(request: Request):
     name = form.get("name", "").strip()
     father = form.get("father_name", "").strip()
     class_id = int(form.get("class_id", 0))
+    phone = form.get("phone", "").strip()
+    phone = phone.replace(" ", "").replace("-", "")
+    if phone and not phone.startswith("+92"):
+        if phone.startswith("0"):
+            phone = "+92" + phone[1:]
+        else:
+            phone = "+92" + phone
 
     extra_data = {}
     for key in form.keys():
@@ -383,9 +418,9 @@ async def admin_students_update(request: Request):
 
     conn = get_db()
     conn.execute("""
-        UPDATE student_records SET name = ?, father_name = ?, extra_data = ?
+        UPDATE student_records SET name = ?, father_name = ?, phone = ?, extra_data = ?
         WHERE id = ?
-    """, (name, father, json.dumps(extra_data, ensure_ascii=False), student_id))
+    """, (name, father, phone, json.dumps(extra_data, ensure_ascii=False), student_id))
     conn.commit()
     conn.close()
     return RedirectResponse(url=f"/admin/students/edit?class_id={class_id}&msg=updated", status_code=303)
@@ -398,6 +433,13 @@ async def admin_students_add(request: Request):
     class_id = int(form.get("class_id"))
     name = form.get("name", "").strip()
     father = form.get("father_name", "").strip()
+    phone = form.get("phone", "").strip()
+    phone = phone.replace(" ", "").replace("-", "")
+    if phone and not phone.startswith("+92"):
+        if phone.startswith("0"):
+            phone = "+92" + phone[1:]
+        else:
+            phone = "+92" + phone
 
     extra_data = {}
     for key in form.keys():
@@ -408,9 +450,9 @@ async def admin_students_add(request: Request):
     conn = get_db()
     try:
         conn.execute("""
-            INSERT INTO student_records (class_id, name, father_name, extra_data)
-            VALUES (?, ?, ?, ?)
-        """, (class_id, name, father, json.dumps(extra_data, ensure_ascii=False)))
+            INSERT INTO student_records (class_id, name, father_name, phone, extra_data)
+            VALUES (?, ?, ?, ?, ?)
+        """, (class_id, name, father, phone, json.dumps(extra_data, ensure_ascii=False)))
         conn.commit()
     except Exception:
         pass
@@ -1045,3 +1087,33 @@ def export_session_excel(session_id: int, request: Request):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+# ===================== ADMIN SESSION SETTINGS =====================
+@router.get("/admin/session-settings", response_class=HTMLResponse)
+def session_settings_page(request: Request):
+    user = require_admin(request)
+    conn = get_db()
+    start_date = get_setting(conn, "session_start_date", "")
+    end_date = get_setting(conn, "session_end_date", "")
+    conn.close()
+    return templates.TemplateResponse("admin_session_settings.html", {
+        "request": request,
+        "user": user,
+        "start_date": start_date,
+        "end_date": end_date,
+    })
+
+
+@router.post("/admin/session-settings")
+def save_session_settings(
+    request: Request,
+    session_start_date: str = Form(...),
+    session_end_date: str = Form(...),
+):
+    user = require_admin(request)
+    conn = get_db()
+    set_setting(conn, "session_start_date", session_start_date.strip())
+    set_setting(conn, "session_end_date", session_end_date.strip())
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin/session-settings?msg=saved", status_code=303)

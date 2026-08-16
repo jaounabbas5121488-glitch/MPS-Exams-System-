@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from database import init_db
@@ -11,13 +12,21 @@ app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="mps-secret-key-2026")
 templates = Jinja2Templates(directory="templates")
 
+# Serve static files (CSS, JS, images)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+# Serve uploaded files (question images, etc.)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 
 @app.on_event("startup")
 def startup():
     init_db()
-    # NEW: initialize test generation tables
+    # initialize test generation tables
     from services.test_generation_db import init_test_generation_db
     init_test_generation_db()
+    # initialize SMS templates table
+    from routers.sms import init_sms_tables
+    init_sms_tables()
 
 
 # ─── Helper functions (used by routers) ───
@@ -55,8 +64,10 @@ def shift_month(year: int, month: int, delta: int):
 
 # ─── Include routers ───
 from routers import auth, admin, teacher, test_generation
+from routers import sms  # ADDED: SMS router
 
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(teacher.router)
 app.include_router(test_generation.router)
+app.include_router(sms.router)  # ADDED: SMS router include

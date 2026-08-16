@@ -3,10 +3,15 @@
 {% block main_class %}max-w-5xl mx-auto px-4 py-8{% endblock %}
 
 {% block content %}
-<div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-6 mb-8 shadow-lg text-white">
-  <p class="text-blue-200 text-sm font-medium">Welcome back,</p>
-  <h1 class="text-2xl font-bold mt-0.5">{{ user.full_name }}</h1>
-  <p class="text-blue-300 text-sm mt-1">📅 {{ today }}</p>
+<div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-6 mb-8 shadow-lg text-white flex items-center justify-between">
+  <div>
+    <p class="text-blue-200 text-sm font-medium">Welcome back,</p>
+    <h1 class="text-2xl font-bold mt-0.5">{{ user.full_name }}</h1>
+    <p class="text-blue-300 text-sm mt-1">📅 {{ today }}</p>
+  </div>
+  <div class="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full shadow-lg">
+  <img src="/static/logo.png" alt="MPS Logo" class="w-full h-full object-contain">
+</div>
 </div>
 
 {% set msg = request.query_params.get("msg") %}

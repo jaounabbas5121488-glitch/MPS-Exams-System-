@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Send SMS – Admin{% endblock %}
+{% block main_class %}max-w-6xl mx-auto px-4 py-10{% endblock %}
+
+{% block content %}
+<div class="mb-8 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white">
+  <h1 class="text-3xl font-extrabold">📤 Send Result SMS</h1>
+  <p class="text-slate-400 text-sm mt-2">Select a confirmed exam session to send result SMS to fathers.</p>
+</div>
+
+{% if sessions %}
+<div class="bg-white rounded-2xl shadow overflow-hidden">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50 text-left">
+      <tr>
+        <th class="px-4 py-3">Class</th>
+        <th class="px-4 py-3">Test</th>
+        <th class="px-4 py-3">Date</th>
+        <th class="px-4 py-3">Action</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for sess in sessions %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3">{{ sess.class_name }}</td>
+        <td class="px-4 py-3">{{ sess.test_type_name }} {{ sess.test_number }}</td>
+        <td class="px-4 py-3">{{ sess.conduct_date }}</td>
+        <td class="px-4 py-3">
+          <a href="/admin/sms-send/{{ sess.id }}" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">Send SMS</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="bg-white rounded-2xl shadow p-6 text-center text-gray-500">
+  No confirmed sessions found. Confirm a result first.
+</div>
+{% endif %}
+{% endblock %}

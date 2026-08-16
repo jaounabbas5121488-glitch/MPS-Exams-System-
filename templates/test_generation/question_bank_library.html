@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Question Bank Library{% endblock %}
+{% block main_class %}max-w-7xl mx-auto px-4 py-8{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/test-generation" class="text-indigo-600 text-sm hover:underline">← Back to Test Generation</a>
+</div>
+
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <h1 class="text-2xl font-bold text-gray-800 mb-2">📚 Question Bank Library</h1>
+  <p class="text-sm text-gray-500">All syllabus blocks. Use filters to find blocks, click to open editor, download or upload backups.</p>
+</div>
+
+<!-- Filters -->
+<form method="get" action="/test-generation/question-bank" class="bg-white rounded-2xl shadow p-6 mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+  <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">Class</label>
+    <select name="class_id" class="w-full border rounded-lg px-3 py-2 text-sm" onchange="this.form.submit()">
+      <option value="">-- All Classes --</option>
+      {% for cls in classes %}
+      <option value="{{ cls.id }}" {% if cls.id|string == selected_class %}selected{% endif %}>{{ cls.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+    <select name="subject_id" class="w-full border rounded-lg px-3 py-2 text-sm" onchange="this.form.submit()">
+      <option value="">-- All Subjects --</option>
+      {% for subj in subjects %}
+      <option value="{{ subj.id }}" {% if subj.id|string == selected_subject %}selected{% endif %}>{{ subj.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">Block Name</label>
+    <select name="block_id" class="w-full border rounded-lg px-3 py-2 text-sm" onchange="this.form.submit()">
+      <option value="">-- All Blocks --</option>
+      {% for block in blocks %}
+      <option value="{{ block.id }}" {% if block.id|string == selected_block_id %}selected{% endif %}>
+        {{ block.class_name }} – {{ block.subject_name }} – {{ block.block_name }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+<!-- Global Backup Actions -->
+<div class="bg-white rounded-2xl shadow p-4 mb-8 flex flex-wrap items-center gap-4">
+  <a href="/test-generation/download-all" class="bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-4 py-2 rounded-xl">⬇️ Download All Questions</a>
+  <form method="post" action="/test-generation/upload-all" enctype="multipart/form-data" class="flex items-center gap-2">
+    <input type="file" name="file" accept=".xlsx" required class="text-xs border rounded px-2 py-1">
+    <select name="mode" class="border rounded px-2 py-1 text-xs">
+      <option value="append">Append</option>
+      <option value="replace">Replace All</option>
+    </select>
+    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-xl">⬆️ Upload All</button>
+  </form>
+</div>
+
+<!-- Library Table -->
+<div class="bg-white rounded-2xl shadow overflow-hidden">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-3 text-left">Block Name</th>
+        <th class="px-4 py-3 text-left">Class</th>
+        <th class="px-4 py-3 text-left">Subject</th>
+        <th class="px-4 py-3 text-center">MCQs</th>
+        <th class="px-4 py-3 text-center">Short</th>
+        <th class="px-4 py-3 text-center">Long</th>
+        <th class="px-4 py-3 text-center">Comp</th>
+        <th class="px-4 py-3 text-left">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for block in blocks %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-medium">{{ block.block_name }}</td>
+        <td class="px-4 py-3">{{ block.class_name }}</td>
+        <td class="px-4 py-3">{{ block.subject_name }}</td>
+        <td class="px-4 py-3 text-center">{{ block.mcq_count }}</td>
+        <td class="px-4 py-3 text-center">{{ block.short_count }}</td>
+        <td class="px-4 py-3 text-center">{{ block.long_count }}</td>
+        <td class="px-4 py-3 text-center">{{ block.comp_count }}</td>
+        <td class="px-4 py-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Open Editor -->
+            <a href="/test-generation/question-bank/editor/{{ block.id }}" class="text-blue-600 hover:underline text-xs">Open Editor</a>
+            <!-- Download block -->
+            <a href="/test-generation/download-block/{{ block.id }}" class="text-green-600 hover:underline text-xs">⬇️ Download</a>
+            <!-- Upload block -->
+            <form method="post" action="/test-generation/upload-block/{{ block.id }}" enctype="multipart/form-data" class="flex items-center gap-1">
+              <input type="file" name="file" accept=".xlsx" required class="text-xs w-24 border rounded px-1 py-0.5">
+              <select name="mode" class="border rounded px-1 py-0.5 text-xs">
+                <option value="append">Append</option>
+                <option value="replace">Replace</option>
+              </select>
+              <button type="submit" class="bg-gray-500 hover:bg-gray-600 text-white text-xs px-2 py-0.5 rounded">⬆️</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

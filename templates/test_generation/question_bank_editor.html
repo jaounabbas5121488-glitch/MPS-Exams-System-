@@ -1,0 +1,538 @@
+{% extends "base.html" %}
+{% block title %}Question Bank Editor{% endblock %}
+{% block main_class %}max-w-7xl mx-auto px-4 py-8{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/test-generation/question-bank" class="text-indigo-600 text-sm hover:underline">← Back to Library</a>
+</div>
+
+<div class="bg-white rounded-2xl shadow p-6 mb-8">
+  <h1 class="text-2xl font-bold text-gray-800 mb-2">📝 {{ block.block_name }}</h1>
+  <p class="text-sm text-gray-500">{{ block.class_name }} – {{ block.subject_name }}</p>
+
+  <!-- ===== NEW: Global default text-direction toggle ===== -->
+  <div class="flex items-center gap-2 mt-4">
+    <span class="text-xs font-medium text-gray-500">🌐 Default Direction:</span>
+    <button type="button" id="global-ltr-btn" onclick="setGlobalDirection('ltr')"
+      class="global-dir-btn text-xs font-semibold px-4 py-2 rounded-lg bg-gray-200 text-gray-700 transition">
+      LTR
+    </button>
+    <button type="button" id="global-rtl-btn" onclick="setGlobalDirection('rtl')"
+      class="global-dir-btn text-xs font-semibold px-4 py-2 rounded-lg bg-gray-200 text-gray-700 transition">
+      RTL
+    </button>
+  </div>
+  <!-- ===== END NEW ===== -->
+</div>
+
+{% set msg = request.query_params.get("msg") %}
+{% if msg %}
+<div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">✅ Done.</div>
+{% endif %}
+
+<!-- ===================== MCQs Section ===================== -->
+<div class="bg-white rounded-2xl shadow p-6 mb-6">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">🔵 MCQs</h2>
+
+  <form method="post" action="/test-generation/question-bank/mcq/add" class="space-y-4 mb-6" onsubmit="postForm(this); return false;">
+    <input type="hidden" name="block_id" value="{{ block_id }}">
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Question</label>
+      <textarea id="question_text_add" name="question_text" class="rich-editor"></textarea>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div><label class="block text-sm font-medium text-gray-700 mb-1">Option A</label><textarea id="option_a_add" name="option_a" class="rich-editor"></textarea></div>
+      <div><label class="block text-sm font-medium text-gray-700 mb-1">Option B</label><textarea id="option_b_add" name="option_b" class="rich-editor"></textarea></div>
+      <div><label class="block text-sm font-medium text-gray-700 mb-1">Option C</label><textarea id="option_c_add" name="option_c" class="rich-editor"></textarea></div>
+      <div><label class="block text-sm font-medium text-gray-700 mb-1">Option D</label><textarea id="option_d_add" name="option_d" class="rich-editor"></textarea></div>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Correct Answer</label>
+      <select name="correct_answer" class="w-full border rounded-lg px-3 py-2 text-sm">
+        <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
+      </select>
+    </div>
+    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-xl text-sm">Add MCQ</button>
+  </form>
+
+  {% if questions_mcq %}
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50">
+        <tr><th class="px-4 py-2 text-left">#</th><th class="px-4 py-2 text-left">Question</th><th class="px-4 py-2 text-left">Correct</th><th class="px-4 py-2 text-left">Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for q in questions_mcq %}
+        <tr class="border-t">
+          <td class="px-4 py-2">{{ loop.index }}</td>
+          <td class="px-4 py-2">{{ q.question_text | safe }}</td>
+          <td class="px-4 py-2">{{ q.correct_answer }}</td>
+          <td class="px-4 py-2 flex gap-2">
+            <button onclick="document.getElementById('edit-mcq-{{ q.id }}').classList.remove('hidden')" class="text-blue-600 text-xs">Edit</button>
+            <form method="post" action="/test-generation/question-bank/mcq/delete/{{ q.id }}" onsubmit="postForm(this); return false;"><button type="submit" class="text-red-600 text-xs">✕</button></form>
+          </td>
+        </tr>
+        <tr id="edit-mcq-{{ q.id }}" class="hidden border-t">
+          <td colspan="4">
+            <form method="post" action="/test-generation/question-bank/mcq/edit/{{ q.id }}" class="space-y-4 p-3 bg-gray-50" onsubmit="postForm(this); return false;">
+              <input type="hidden" name="block_id" value="{{ block_id }}">
+              <div><label class="block text-sm font-medium text-gray-700 mb-1">Question</label><textarea id="question_text_edit_{{ q.id }}" name="question_text" class="rich-editor-edit">{{ q.question_text }}</textarea></div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Option A</label><textarea id="option_a_edit_{{ q.id }}" name="option_a" class="rich-editor-edit">{{ q.option_a }}</textarea></div>
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Option B</label><textarea id="option_b_edit_{{ q.id }}" name="option_b" class="rich-editor-edit">{{ q.option_b }}</textarea></div>
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Option C</label><textarea id="option_c_edit_{{ q.id }}" name="option_c" class="rich-editor-edit">{{ q.option_c }}</textarea></div>
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Option D</label><textarea id="option_d_edit_{{ q.id }}" name="option_d" class="rich-editor-edit">{{ q.option_d }}</textarea></div>
+              </div>
+              <select name="correct_answer" class="border rounded px-2 py-1 text-sm">
+                <option value="A" {% if q.correct_answer == 'A' %}selected{% endif %}>A</option>
+                <option value="B" {% if q.correct_answer == 'B' %}selected{% endif %}>B</option>
+                <option value="C" {% if q.correct_answer == 'C' %}selected{% endif %}>C</option>
+                <option value="D" {% if q.correct_answer == 'D' %}selected{% endif %}>D</option>
+              </select>
+              <button type="submit" class="bg-green-600 text-white text-xs px-3 py-1 rounded">Save</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-gray-500 text-sm">No MCQs yet.</p>
+  {% endif %}
+</div>
+
+<!-- ===================== Short Questions Section ===================== -->
+<div class="bg-white rounded-2xl shadow p-6 mb-6">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">🟢 Short Questions</h2>
+
+  <form method="post" action="/test-generation/question-bank/short/add" class="space-y-4 mb-6" onsubmit="postForm(this); return false;">
+    <input type="hidden" name="block_id" value="{{ block_id }}">
+    <div><label class="block text-sm font-medium text-gray-700 mb-1">Question</label><textarea id="short_question_add" name="question_text" class="rich-editor"></textarea></div>
+    <div class="hidden" id="short-answer-div">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Answer (optional)</label>
+      <textarea id="short_answer_add" name="answer_text" class="rich-editor"></textarea>
+    </div>
+    <button type="button" onclick="document.getElementById('short-answer-div').classList.toggle('hidden')" class="text-sm text-blue-600 underline">Add Answer</button>
+    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-xl text-sm">Add Short</button>
+  </form>
+
+  {% if questions_short %}
+  <div class="space-y-4">
+    {% for q in questions_short %}
+    <div class="border rounded-lg p-3 bg-gray-50">
+      <div class="flex justify-between items-start">
+        <div class="flex-1">
+          <p class="text-sm text-gray-800">{{ q.question_text | safe }}</p>
+          {% if q.answer_text %}
+          <p class="text-xs text-gray-500 mt-1"><strong>Answer:</strong> {{ q.answer_text | safe }}</p>
+          {% endif %}
+        </div>
+        <div class="flex gap-2 ml-4">
+          <button onclick="document.getElementById('edit-short-{{ q.id }}').classList.remove('hidden')" class="text-blue-600 text-xs">Edit</button>
+          <form method="post" action="/test-generation/question-bank/short/delete/{{ q.id }}" onsubmit="postForm(this); return false;"><button type="submit" class="text-red-600 text-xs">✕</button></form>
+        </div>
+      </div>
+      <div id="edit-short-{{ q.id }}" class="hidden mt-2">
+        <form method="post" action="/test-generation/question-bank/short/edit/{{ q.id }}" class="space-y-2" onsubmit="postForm(this); return false;">
+          <input type="hidden" name="block_id" value="{{ block_id }}">
+          <div><label class="block text-sm font-medium text-gray-700 mb-1">Question</label><textarea id="short_question_edit_{{ q.id }}" name="question_text" class="rich-editor-edit">{{ q.question_text }}</textarea></div>
+          <div><label class="block text-sm font-medium text-gray-700 mb-1">Answer (optional)</label><textarea id="short_answer_edit_{{ q.id }}" name="answer_text" class="rich-editor-edit">{{ q.answer_text }}</textarea></div>
+          <button type="submit" class="bg-green-600 text-white text-xs px-3 py-1 rounded">Save</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-gray-500 text-sm">No short questions yet.</p>
+  {% endif %}
+</div>
+
+<!-- ===================== Long Questions Section ===================== -->
+<div class="bg-white rounded-2xl shadow p-6 mb-6">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">🔴 Long Questions</h2>
+
+  <form method="post" action="/test-generation/question-bank/long/add" class="space-y-4 mb-6" onsubmit="postForm(this); return false;">
+    <input type="hidden" name="block_id" value="{{ block_id }}">
+    <div><label class="block text-sm font-medium text-gray-700 mb-1">Question</label><textarea id="long_question_add" name="question_text" class="rich-editor"></textarea></div>
+    <div class="hidden" id="long-answer-div">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Answer (optional)</label>
+      <textarea id="long_answer_add" name="answer_text" class="rich-editor"></textarea>
+    </div>
+    <button type="button" onclick="document.getElementById('long-answer-div').classList.toggle('hidden')" class="text-sm text-blue-600 underline">Add Answer</button>
+    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-xl text-sm">Add Long</button>
+  </form>
+
+  {% if questions_long %}
+  <div class="space-y-4">
+    {% for q in questions_long %}
+    <div class="border rounded-lg p-3 bg-gray-50">
+      <div class="flex justify-between items-start">
+        <div class="flex-1">
+          <p class="text-sm text-gray-800">{{ q.question_text | safe }}</p>
+          {% if q.answer_text %}
+          <p class="text-xs text-gray-500 mt-1"><strong>Answer:</strong> {{ q.answer_text | safe }}</p>
+          {% endif %}
+        </div>
+        <div class="flex gap-2 ml-4">
+          <button onclick="document.getElementById('edit-long-{{ q.id }}').classList.remove('hidden')" class="text-blue-600 text-xs">Edit</button>
+          <form method="post" action="/test-generation/question-bank/long/delete/{{ q.id }}" onsubmit="postForm(this); return false;"><button type="submit" class="text-red-600 text-xs">✕</button></form>
+        </div>
+      </div>
+      <div id="edit-long-{{ q.id }}" class="hidden mt-2">
+        <form method="post" action="/test-generation/question-bank/long/edit/{{ q.id }}" class="space-y-2" onsubmit="postForm(this); return false;">
+          <input type="hidden" name="block_id" value="{{ block_id }}">
+          <div><label class="block text-sm font-medium text-gray-700 mb-1">Question</label><textarea id="long_question_edit_{{ q.id }}" name="question_text" class="rich-editor-edit">{{ q.question_text }}</textarea></div>
+          <div><label class="block text-sm font-medium text-gray-700 mb-1">Answer (optional)</label><textarea id="long_answer_edit_{{ q.id }}" name="answer_text" class="rich-editor-edit">{{ q.answer_text }}</textarea></div>
+          <button type="submit" class="bg-green-600 text-white text-xs px-3 py-1 rounded">Save</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-gray-500 text-sm">No long questions yet.</p>
+  {% endif %}
+</div>
+
+<!-- ===================== Comprehension Section ===================== -->
+<div class="bg-white rounded-2xl shadow p-6">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">📖 Comprehension</h2>
+
+  <!-- Add Passage Form (always visible) -->
+  <form method="post" action="/test-generation/question-bank/comprehension/add" class="space-y-4 mb-6" onsubmit="postForm(this); return false;">
+    <input type="hidden" name="block_id" value="{{ block_id }}">
+    <div><label class="block text-sm font-medium text-gray-700 mb-1">Passage</label><textarea id="passage_add" name="passage" class="rich-editor"></textarea></div>
+    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-xl text-sm">Add Passage</button>
+  </form>
+
+  {% if comprehensions %}
+    {% for comp in comprehensions %}
+    <div class="border rounded-xl mb-4 bg-gray-50">
+      <!-- Collapsible Header -->
+      <div class="flex justify-between items-center p-3 cursor-pointer bg-gray-100 rounded-t-xl" onclick="toggleComp({{ comp.id }})">
+        <span class="font-medium text-gray-800">📖 Comprehension {{ loop.index }}</span>
+        <span class="text-xs text-gray-500">Click to expand / collapse</span>
+      </div>
+
+      <!-- Collapsible Content (hidden by default) -->
+      <div id="comp-content-{{ comp.id }}" class="hidden p-4 border-t">
+        <!-- Passage -->
+        <div class="flex justify-between items-start mb-2">
+          <div class="flex-1">{{ comp.comprehension_passage | safe }}</div>
+          <div class="flex gap-2 ml-4">
+            <button onclick="document.getElementById('edit-comp-{{ comp.id }}').classList.remove('hidden')" class="text-blue-600 text-xs">Edit Passage</button>
+            <form method="post" action="/test-generation/question-bank/comprehension/delete/{{ comp.id }}" onsubmit="postForm(this); return false;">
+              <button type="submit" class="text-red-600 text-xs">✕</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Edit Passage Form -->
+        <div id="edit-comp-{{ comp.id }}" class="hidden mt-2">
+          <form method="post" action="/test-generation/question-bank/comprehension/edit/{{ comp.id }}" class="space-y-2" onsubmit="postForm(this); return false;">
+            <input type="hidden" name="block_id" value="{{ block_id }}">
+            <textarea id="passage_edit_{{ comp.id }}" name="passage" class="rich-editor-edit">{{ comp.comprehension_passage }}</textarea>
+            <button type="submit" class="bg-green-600 text-white text-xs px-3 py-1 rounded">Save</button>
+          </form>
+        </div>
+
+        <!-- MCQs for this passage -->
+        <div class="mt-3 pl-4 border-l-2 border-gray-200">
+          <h3 class="text-sm font-semibold text-gray-600 mb-2">MCQs for this passage</h3>
+
+          {% if comp.mcqs %}
+          <div class="space-y-2">
+            {% for mcq in comp.mcqs %}
+            <div class="flex items-start justify-between border-b border-gray-200 py-1">
+              <div class="flex-1">
+                <p class="text-sm text-gray-800">{{ mcq.question_text | safe }}</p>
+                <p class="text-xs text-gray-500">A: {{ mcq.option_a | safe }} | B: {{ mcq.option_b | safe }} | C: {{ mcq.option_c | safe }} | D: {{ mcq.option_d | safe }} | <strong>Correct:</strong> {{ mcq.correct_answer }}</p>
+              </div>
+              <div class="flex gap-2 ml-4">
+                <button onclick="document.getElementById('edit-comp-mcq-{{ mcq.id }}').classList.remove('hidden')" class="text-blue-600 text-xs">Edit</button>
+                <form method="post" action="/test-generation/question-bank/comprehension/mcq/delete/{{ mcq.id }}" onsubmit="postForm(this); return false;">
+                  <button type="submit" class="text-red-600 text-xs">✕</button>
+                </form>
+              </div>
+            </div>
+
+            <!-- Edit MCQ for this passage -->
+            <div id="edit-comp-mcq-{{ mcq.id }}" class="hidden bg-white p-2 rounded border">
+              <form method="post" action="/test-generation/question-bank/comprehension/mcq/edit/{{ mcq.id }}" class="grid grid-cols-2 gap-2" onsubmit="postForm(this); return false;">
+                <input type="hidden" name="block_id" value="{{ block_id }}">
+                <div class="col-span-2"><label class="block text-xs text-gray-600 mb-1">Question</label><textarea id="comp_mcq_question_edit_{{ mcq.id }}" name="question_text" class="rich-editor-edit">{{ mcq.question_text }}</textarea></div>
+                <div><label class="block text-xs text-gray-600 mb-1">Option A</label><textarea id="comp_mcq_a_edit_{{ mcq.id }}" name="option_a" class="rich-editor-edit">{{ mcq.option_a }}</textarea></div>
+                <div><label class="block text-xs text-gray-600 mb-1">Option B</label><textarea id="comp_mcq_b_edit_{{ mcq.id }}" name="option_b" class="rich-editor-edit">{{ mcq.option_b }}</textarea></div>
+                <div><label class="block text-xs text-gray-600 mb-1">Option C</label><textarea id="comp_mcq_c_edit_{{ mcq.id }}" name="option_c" class="rich-editor-edit">{{ mcq.option_c }}</textarea></div>
+                <div><label class="block text-xs text-gray-600 mb-1">Option D</label><textarea id="comp_mcq_d_edit_{{ mcq.id }}" name="option_d" class="rich-editor-edit">{{ mcq.option_d }}</textarea></div>
+                <select name="correct_answer" class="border rounded px-2 py-1 text-sm col-span-2">
+                  <option value="A" {% if mcq.correct_answer == 'A' %}selected{% endif %}>A</option>
+                  <option value="B" {% if mcq.correct_answer == 'B' %}selected{% endif %}>B</option>
+                  <option value="C" {% if mcq.correct_answer == 'C' %}selected{% endif %}>C</option>
+                  <option value="D" {% if mcq.correct_answer == 'D' %}selected{% endif %}>D</option>
+                </select>
+                <button type="submit" class="bg-green-600 text-white text-xs px-3 py-1 rounded col-span-2">Save</button>
+              </form>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-xs text-gray-500">No MCQs for this passage yet.</p>
+          {% endif %}
+
+          <!-- Add MCQ for this passage -->
+          <form method="post" action="/test-generation/question-bank/comprehension/mcq/add" class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3" onsubmit="postForm(this); return false;">
+            <input type="hidden" name="block_id" value="{{ block_id }}">
+            <input type="hidden" name="parent_id" value="{{ comp.id }}">
+            <div class="md:col-span-2"><label class="block text-xs text-gray-600 mb-1">Question</label><textarea id="comp_mcq_question_add_{{ comp.id }}" name="question_text" class="rich-editor" placeholder="Question"></textarea></div>
+            <div><label class="block text-xs text-gray-600 mb-1">Option A</label><textarea id="comp_mcq_a_add_{{ comp.id }}" name="option_a" class="rich-editor" placeholder="Option A"></textarea></div>
+            <div><label class="block text-xs text-gray-600 mb-1">Option B</label><textarea id="comp_mcq_b_add_{{ comp.id }}" name="option_b" class="rich-editor" placeholder="Option B"></textarea></div>
+            <div><label class="block text-xs text-gray-600 mb-1">Option C</label><textarea id="comp_mcq_c_add_{{ comp.id }}" name="option_c" class="rich-editor" placeholder="Option C"></textarea></div>
+            <div><label class="block text-xs text-gray-600 mb-1">Option D</label><textarea id="comp_mcq_d_add_{{ comp.id }}" name="option_d" class="rich-editor" placeholder="Option D"></textarea></div>
+            <select name="correct_answer" class="border rounded px-2 py-1 text-sm md:col-span-2">
+              <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
+            </select>
+            <button type="submit" class="bg-blue-600 text-white text-xs px-3 py-1 rounded md:col-span-2">Add MCQ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="text-gray-500 text-sm">No comprehensions yet. Use the form above to add a passage.</p>
+  {% endif %}
+</div>
+
+<!-- ===================== TinyMCE and Scripts ===================== -->
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.2/tinymce.min.js" referrerpolicy="origin"></script>
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.2/plugins/table/plugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.2/plugins/image/plugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.2/plugins/media/plugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.2/plugins/lists/plugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.2/plugins/link/plugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.2/plugins/charmap/plugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.2/plugins/directionality/plugin.min.js"></script>
+
+<script>
+// ===================== AJAX FORM SUBMISSION =====================
+function postForm(form) {
+  if (window.tinymce) {
+    window.tinymce.triggerSave();
+  }
+  const formData = new FormData(form);
+  fetch(form.action, {
+    method: 'POST',
+    body: formData,
+    redirect: 'follow'
+  })
+  .then(response => {
+    window.location.reload();
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Submission failed: ' + error.message);
+  });
+}
+
+function toggleComp(id) {
+  const el = document.getElementById('comp-content-' + id);
+  if (el) {
+    el.classList.toggle('hidden');
+  }
+}
+
+// ===== NEW: GLOBAL RTL/LTR DEFAULT-DIRECTION CONTROL =====
+// This is the single global switch. Clicking it sets the DEFAULT typing
+// direction for every editor block on the page (MCQ / Short / Long /
+// Comprehension — all of them) in one go, and remembers the choice
+// (localStorage) so it survives the page reload that happens after
+// every Add/Edit/Delete. Each editor's own existing RTL/LTR ribbon
+// button is untouched — it still only changes the ONE specific
+// line/paragraph under the cursor, which stays that way even if the
+// global default is changed again later (exactly like "select all" vs
+// "select this one line" in MS Word).
+const GLOBAL_DIR_STORAGE_KEY = 'qbank_global_text_direction';
+
+function getGlobalDirection() {
+  const stored = localStorage.getItem(GLOBAL_DIR_STORAGE_KEY);
+  if (stored === 'rtl' || stored === 'ltr') return stored;
+  return "{{ subject_direction }}" === 'rtl' ? 'rtl' : 'ltr';
+}
+
+function updateGlobalDirButtonsUI(dir) {
+  const ltrBtn = document.getElementById('global-ltr-btn');
+  const rtlBtn = document.getElementById('global-rtl-btn');
+  if (!ltrBtn || !rtlBtn) return;
+  const active = ['bg-indigo-600', 'text-white'];
+  const inactive = ['bg-gray-200', 'text-gray-700'];
+  if (dir === 'rtl') {
+    rtlBtn.classList.add(...active);
+    rtlBtn.classList.remove(...inactive);
+    ltrBtn.classList.add(...inactive);
+    ltrBtn.classList.remove(...active);
+  } else {
+    ltrBtn.classList.add(...active);
+    ltrBtn.classList.remove(...inactive);
+    rtlBtn.classList.add(...inactive);
+    rtlBtn.classList.remove(...active);
+  }
+}
+
+function applyGlobalDirectionToAllEditors(dir) {
+  if (!window.tinymce) return;
+  tinymce.editors.forEach(function (editor) {
+    if (!editor || !editor.getBody) return;
+    const body = editor.getBody();
+    if (!body) return;
+    body.setAttribute('dir', dir);
+    body.style.direction = (dir === 'rtl') ? 'rtl' : 'ltr';
+    body.style.textAlign = 'start';
+  });
+}
+
+function setGlobalDirection(dir) {
+  localStorage.setItem(GLOBAL_DIR_STORAGE_KEY, dir);
+  updateGlobalDirButtonsUI(dir);
+  applyGlobalDirectionToAllEditors(dir);
+}
+// ===== END NEW =====
+
+document.addEventListener('DOMContentLoaded', function() {
+  // ---------- Helper functions for math insertion ----------
+  function insertHTML(editor, html) { editor.insertContent(html + ' '); }
+  function insertFraction(editor) {
+    const numerator = prompt("Numerator (upper part):", "a");
+    if (numerator === null) return;
+    const denominator = prompt("Denominator (lower part):", "b");
+    if (denominator === null) return;
+    insertHTML(editor, `<span class="math-fraction"><span class="num">${numerator}</span><span class="den">${denominator}</span></span>`);
+  }
+  function insertMixedFraction(editor) {
+    const whole = prompt("Whole number:", "2");
+    if (whole === null) return;
+    const numerator = prompt("Numerator:", "1");
+    if (numerator === null) return;
+    const denominator = prompt("Denominator:", "3");
+    if (denominator === null) return;
+    insertHTML(editor, `${whole}<span class="math-fraction"><span class="num">${numerator}</span><span class="den">${denominator}</span></span>`);
+  }
+  function insertRadical(editor) {
+    const radicand = prompt("Expression under root:", "x");
+    if (radicand === null) return;
+    insertHTML(editor, `<span class="math-root"><span class="sqrt-symbol">√</span><span class="radicand">${radicand}</span></span>`);
+  }
+  function insertCubeRoot(editor) {
+    const radicand = prompt("Expression under cube root:", "x");
+    if (radicand === null) return;
+    insertHTML(editor, `<span class="math-root"><span class="sqrt-symbol">∛</span><span class="radicand">${radicand}</span></span>`);
+  }
+  function insertPower(editor) {
+    const base = prompt("Base:", "x");
+    if (base === null) return;
+    const exponent = prompt("Exponent:", "2");
+    if (exponent === null) return;
+    insertHTML(editor, `${base}<sup>${exponent}</sup>`);
+  }
+  function insertMatrix(editor) {
+    const a11 = prompt("Row1 Col1:", "a");
+    if (a11 === null) return;
+    const a12 = prompt("Row1 Col2:", "b");
+    if (a12 === null) return;
+    const a21 = prompt("Row2 Col1:", "c");
+    if (a21 === null) return;
+    const a22 = prompt("Row2 Col2:", "d");
+    if (a22 === null) return;
+    insertHTML(editor, `<table class="math-matrix"><tr><td>${a11}</td><td>${a12}</td></tr><tr><td>${a21}</td><td>${a22}</td></tr></table>`);
+  }
+  function insertBracketPair(editor, open, close) { editor.insertContent(open + close + ' '); }
+  function insertOverbar(editor) {
+    const text = prompt("Text above bar:", "x");
+    if (text === null) return;
+    insertHTML(editor, `<span class="math-overbar">${text}</span>`);
+  }
+  function insertCircle(editor) { editor.insertContent(' ○ '); }
+  function insertSymbol(editor, symbol) { editor.insertContent(symbol + ' '); }
+
+  const subjectDirection = "{{ subject_direction }}";
+  const urduFont = "{{ default_urdu_font }}";
+  const englishFont = "{{ default_english_font }}";
+  // NEW: the starting direction now comes from the global toggle
+  // (localStorage) instead of only the subject's default — falls back
+  // to the subject default the very first time, before anything's
+  // been chosen yet.
+  const initialDirection = getGlobalDirection();
+  const fontFamily = [urduFont, englishFont, 'sans-serif'].filter(Boolean).join(', ');
+
+  // NEW: make the global toggle buttons show the correct highlighted
+  // state on load / after every reload.
+  updateGlobalDirButtonsUI(initialDirection);
+
+  const mathToolbar = 'fraction mixedfraction radical cuberoot power matrix | circle pi sigma sum | roundbrackets squarebrackets curlybrackets overbar |';
+  const toolbar = `undo redo | blocks | bold italic underline superscript subscript | bullist numlist | table image | rtl ltr | ${mathToolbar} removeformat`;
+
+  tinymce.init({
+    selector: '.rich-editor, .rich-editor-edit',
+    height: 250,
+    menubar: false,
+    promotion: false,
+    plugins: 'table image media lists link charmap directionality',
+    toolbar: toolbar,
+    directionality: initialDirection,
+    // NEW: explicitly stamp every editor's body with the current global
+    // direction as soon as it's created. This is what actually makes the
+    // global toggle apply to every block reliably (MCQ, Short, Long,
+    // Comprehension passages and their MCQs — all of them), while any
+    // paragraph that already has its own dir set (via that editor's own
+    // local RTL/LTR ribbon button) keeps its own setting, since an
+    // explicit dir on a paragraph always overrides the body's default.
+    init_instance_callback: function(editor) {
+      const body = editor.getBody();
+      if (body) {
+        body.setAttribute('dir', initialDirection);
+        body.style.direction = (initialDirection === 'rtl') ? 'rtl' : 'ltr';
+        body.style.textAlign = 'start';
+      }
+    },
+    images_upload_url: '/test-generation/upload-image',
+    automatic_uploads: true,
+    file_picker_types: 'image',
+    image_caption: true,
+    table_toolbar: 'tableprops tabledelete | tableinsertrowbefore tableinsertrowafter tabledeleterow | tableinsertcolbefore tableinsertcolafter tabledeletecol',
+    table_grid: true,
+    setup: function(editor) {
+      editor.ui.registry.addButton('rtl', { text: 'RTL', tooltip: 'Right to Left', onAction: () => editor.execCommand('mceDirectionRTL') });
+      editor.ui.registry.addButton('ltr', { text: 'LTR', tooltip: 'Left to Right', onAction: () => editor.execCommand('mceDirectionLTR') });
+      editor.ui.registry.addButton('fraction', { text: '½', tooltip: 'Insert Fraction', onAction: () => insertFraction(editor) });
+      editor.ui.registry.addButton('mixedfraction', { text: '⅔', tooltip: 'Insert Mixed Fraction', onAction: () => insertMixedFraction(editor) });
+      editor.ui.registry.addButton('radical', { text: '√', tooltip: 'Insert Square Root', onAction: () => insertRadical(editor) });
+      editor.ui.registry.addButton('cuberoot', { text: '∛', tooltip: 'Insert Cube Root', onAction: () => insertCubeRoot(editor) });
+      editor.ui.registry.addButton('power', { text: 'x²', tooltip: 'Insert Power', onAction: () => insertPower(editor) });
+      editor.ui.registry.addButton('matrix', { text: '⊞', tooltip: 'Insert Matrix', onAction: () => insertMatrix(editor) });
+      editor.ui.registry.addButton('circle', { text: '○', tooltip: 'Insert Circle', onAction: () => insertCircle(editor) });
+      editor.ui.registry.addButton('pi', { text: 'π', tooltip: 'Insert Pi', onAction: () => insertSymbol(editor, 'π') });
+      editor.ui.registry.addButton('sigma', { text: 'σ', tooltip: 'Insert Sigma', onAction: () => insertSymbol(editor, 'σ') });
+      editor.ui.registry.addButton('sum', { text: '∑', tooltip: 'Insert Summation', onAction: () => insertSymbol(editor, '∑') });
+      editor.ui.registry.addButton('roundbrackets', { text: '( )', tooltip: 'Round Brackets', onAction: () => insertBracketPair(editor, '(', ')') });
+      editor.ui.registry.addButton('squarebrackets', { text: '[ ]', tooltip: 'Square Brackets', onAction: () => insertBracketPair(editor, '[', ']') });
+      editor.ui.registry.addButton('curlybrackets', { text: '{ }', tooltip: 'Curly Brackets', onAction: () => insertBracketPair(editor, '{', '}') });
+      editor.ui.registry.addButton('overbar', { text: '⎯', tooltip: 'Overbar', onAction: () => insertOverbar(editor) });
+    },
+    content_style: `
+      body { font-family: ${fontFamily}; }
+      .math-fraction { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 0.2em; }
+      .math-fraction .num { border-bottom: 1px solid #000; padding: 0 0.2em; }
+      .math-fraction .den { padding: 0 0.2em; }
+      .math-root { display: inline-flex; align-items: center; vertical-align: middle; }
+      .math-root .sqrt-symbol { font-size: 1.2em; margin-right: 0.1em; }
+      .math-root .radicand { border-top: 1px solid #000; padding: 0 0.2em; }
+      .math-matrix { display: inline-table; border-collapse: collapse; vertical-align: middle; margin: 0 0.2em; }
+      .math-matrix td { padding: 0.2em 0.5em; text-align: center; }
+      .math-overbar { text-decoration: overline; }
+    `
+  });
+});
+</script>
+{% endblock %}

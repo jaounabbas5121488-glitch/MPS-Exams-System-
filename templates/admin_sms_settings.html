@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}SMS Settings – Admin{% endblock %}
+{% block main_class %}max-w-3xl mx-auto px-4 py-10{% endblock %}
+
+{% block content %}
+<div class="mb-8 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white">
+  <h1 class="text-3xl font-extrabold">📡 SMS Gateway Settings</h1>
+  <p class="text-slate-400 text-sm mt-2">Configure the URL of your SMS gateway (e.g., ngrok endpoint).</p>
+</div>
+
+{% set msg = request.query_params.get("msg") %}
+{% if msg == "saved" %}
+<div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">✅ SMS gateway URL saved successfully.</div>
+{% endif %}
+
+<div class="bg-white rounded-2xl shadow p-6">
+  <form method="post" action="/admin/sms-settings">
+    <label class="block text-sm font-medium text-gray-700 mb-2">SMS Gateway URL</label>
+    <input type="url" name="sms_gateway_url" value="{{ sms_gateway_url }}" placeholder="https://abc123.ngrok.io" required
+      class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <p class="text-xs text-gray-500 mt-2">Example: <code>https://abc123.ngrok.io</code> (without trailing slash)</p>
+    <div class="mt-6">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-6 rounded-xl">Save URL</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

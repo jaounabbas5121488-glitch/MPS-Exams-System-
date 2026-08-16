@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Session Settings – Admin{% endblock %}
+{% block main_class %}max-w-3xl mx-auto px-4 py-10{% endblock %}
+
+{% block content %}
+<div class="mb-8 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-8 shadow-xl text-white">
+  <h1 class="text-3xl font-extrabold">📅 Session Settings</h1>
+  <p class="text-slate-400 text-sm mt-2">Set the academic session start and end dates for total attendance calculation.</p>
+</div>
+
+{% set msg = request.query_params.get("msg") %}
+{% if msg == "saved" %}
+<div class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-3 mb-6 text-sm">✅ Session dates saved successfully.</div>
+{% endif %}
+
+<div class="bg-white rounded-2xl shadow p-6">
+  <form method="post" action="/admin/session-settings">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Session Start Date</label>
+        <input type="date" name="session_start_date" value="{{ start_date }}" required class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Session End Date</label>
+        <input type="date" name="session_end_date" value="{{ end_date }}" required class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+    </div>
+    <div class="mt-6">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-6 rounded-xl">Save Dates</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

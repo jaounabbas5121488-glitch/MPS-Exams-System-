@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+={% extends "base.html" %}
 {% block title %}Test Generation – MPS Exams System{% endblock %}
 {% block main_class %}max-w-6xl mx-auto px-4 py-10{% endblock %}
 
@@ -57,6 +57,16 @@
       <h3 class="text-lg font-semibold text-gray-800 group-hover:text-indigo-700 transition">Permissions</h3>
     </div>
     <p class="text-sm text-gray-500">Allow/deny teacher access to test generation.</p>
+    <span class="mt-auto text-xs text-indigo-600 mt-3">Open →</span>
+  </a>
+
+  <!-- Font Settings (admin only) -->
+  <a href="/test-generation/fonts" class="bg-white rounded-2xl shadow p-6 flex flex-col hover:shadow-lg transition group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">🔤</span>
+      <h3 class="text-lg font-semibold text-gray-800 group-hover:text-indigo-700 transition">Font Settings</h3>
+    </div>
+    <p class="text-sm text-gray-500">Upload Urdu/English fonts, set defaults.</p>
     <span class="mt-auto text-xs text-indigo-600 mt-3">Open →</span>
   </a>
   {% endif %}

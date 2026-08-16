@@ -34,11 +34,8 @@
         <td class="px-4 py-2">{{ t.block_names }}</td>
         <td class="px-4 py-2">{{ t.total_marks }}</td>
         <td class="px-4 py-2 flex gap-2">
-          <!-- Download Test (Word) -->
-          <a href="/test-generation/generate/download?history_id={{ t.id }}&format=docx" class="text-blue-600 hover:underline text-xs">Word</a>
-          <!-- Download Test (Excel) -->
-          <a href="/test-generation/generate/download?history_id={{ t.id }}&format=xlsx" class="text-green-600 hover:underline text-xs">Excel</a>
-          <!-- Download Answer Key -->
+          <a href="/test-generation/generate/download/{{ t.id }}?format=docx" class="text-blue-600 hover:underline text-xs">Word</a>
+          <a href="/test-generation/generate/download/{{ t.id }}?format=xlsx" class="text-green-600 hover:underline text-xs">Excel</a>
           <form method="post" action="/test-generation/generate/answer-key" class="inline">
             <input type="hidden" name="test_id" value="{{ t.id }}">
             <button type="submit" class="text-purple-600 hover:underline text-xs">Answer Key</button>

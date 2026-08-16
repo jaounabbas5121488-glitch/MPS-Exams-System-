@@ -108,10 +108,40 @@ def get_school_calendar_events(conn):
 
 
 def get_session_start(conn) -> date | None:
+    """
+    Returns admin-configured session start date if set;
+    otherwise falls back to the earliest open day in school_calendar.
+    """
+    # Check admin setting first
+    row = conn.execute(
+        "SELECT setting_value FROM school_settings WHERE setting_key = 'session_start_date'"
+    ).fetchone()
+    if row and row["setting_value"]:
+        try:
+            return date.fromisoformat(row["setting_value"])
+        except ValueError:
+            pass
+
+    # Fallback: derive from calendar
     row = conn.execute("SELECT MIN(date) as d FROM school_calendar WHERE is_open = 1").fetchone()
     if row and row["d"]:
         return date.fromisoformat(row["d"])
     return None
+
+def get_session_end(conn) -> date:
+    """
+    Returns admin-configured session end date if set;
+    otherwise returns today's date.
+    """
+    row = conn.execute(
+        "SELECT setting_value FROM school_settings WHERE setting_key = 'session_end_date'"
+    ).fetchone()
+    if row and row["setting_value"]:
+        try:
+            return date.fromisoformat(row["setting_value"])
+        except ValueError:
+            pass
+    return date.today()
 
 
 def count_total_open_days_marked(conn, start: date | None = None, end: date | None = None) -> int:
@@ -234,6 +264,7 @@ def get_progress_stats(conn, teacher_email: str, year: int | None = None, month:
 def get_session_progress_totals(conn, teacher_email: str) -> dict:
     today = date.today()
     start = get_session_start(conn)
+    end = get_session_end(conn)
 
     if start is None or today < start:
         total_open_days = 0
@@ -241,12 +272,12 @@ def get_session_progress_totals(conn, teacher_email: str) -> dict:
     else:
         total_open_days = conn.execute(
             "SELECT COUNT(*) as c FROM school_calendar WHERE is_open = 1 AND date >= ? AND date <= ?",
-            (start.isoformat(), today.isoformat()),
+            (start.isoformat(), end.isoformat()),
         ).fetchone()["c"]
 
         present_days = conn.execute(
             "SELECT COUNT(*) as c FROM attendance WHERE teacher_email = ? AND date >= ? AND date <= ?",
-            (teacher_email, start.isoformat(), today.isoformat()),
+            (teacher_email, start.isoformat(), end.isoformat()),
         ).fetchone()["c"]
 
     absent_days = max(total_open_days - present_days, 0)
@@ -426,6 +457,17 @@ def init_db():
     """)
     _add_column_if_missing(cur, "subjects", "default_total_marks", "REAL DEFAULT 25")
     _add_column_if_missing(cur, "subjects", "default_passing_marks", "REAL DEFAULT 10")
+    _add_column_if_missing(cur, "subjects", "default_direction", "TEXT DEFAULT 'auto'")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS school_fonts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            font_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            font_type TEXT NOT NULL DEFAULT 'urdu',
+            is_default INTEGER NOT NULL DEFAULT 0
+        )
+    """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS test_types (
@@ -526,6 +568,8 @@ def init_db():
             FOREIGN KEY (class_id) REFERENCES classes(id)
         )
     """)
+
+    _add_column_if_missing(cur, "student_records", "phone", "TEXT DEFAULT ''")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS session_result_summary (

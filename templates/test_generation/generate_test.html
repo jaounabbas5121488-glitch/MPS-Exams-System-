@@ -21,7 +21,7 @@
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">Class</label>
-      <select name="class_id" required class="w-full border rounded-lg px-3 py-2 text-sm" id="classSelect" onchange="this.form.submit()">
+      <select name="class_id" required class="w-full border rounded-lg px-3 py-2 text-sm" id="classSelect">
         <option value="">-- Select --</option>
         {% for cls in classes %}
         <option value="{{ cls.id }}">{{ cls.name }}</option>
@@ -30,7 +30,7 @@
     </div>
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-      <select name="subject_id" required class="w-full border rounded-lg px-3 py-2 text-sm">
+      <select name="subject_id" required class="w-full border rounded-lg px-3 py-2 text-sm" id="subjectSelect" disabled>
         <option value="">-- Select --</option>
         {% for subj in subjects %}
         <option value="{{ subj.id }}">{{ subj.name }}</option>
@@ -39,14 +39,13 @@
     </div>
     <div class="md:col-span-2">
       <label class="block text-sm font-medium text-gray-700 mb-1">Syllabus Blocks (multi‑select)</label>
-      <select name="block_ids" multiple required class="w-full border rounded-lg px-3 py-2 text-sm" size="4">
-        {% for block in blocks %}
-        <option value="{{ block.id }}">{{ block.class_name }} - {{ block.subject_name }} - {{ block.block_name }}</option>
-        {% endfor %}
+      <select name="block_ids" multiple required class="w-full border rounded-lg px-3 py-2 text-sm" size="4" id="blockSelect" disabled>
+        <option value="">-- Select Block --</option>
       </select>
     </div>
   </div>
 
+  <!-- Rest of form same as before -->
   <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">Total Marks</label>
@@ -110,4 +109,46 @@
 
   <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-xl text-sm">Generate & Download</button>
 </form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const classSelect = document.getElementById('classSelect');
+  const subjectSelect = document.getElementById('subjectSelect');
+  const blockSelect = document.getElementById('blockSelect');
+
+  classSelect.addEventListener('change', function() {
+    if (classSelect.value) {
+      subjectSelect.disabled = false;
+      subjectSelect.value = "";
+      blockSelect.disabled = true;
+      blockSelect.innerHTML = '<option value="">-- Select Block --</option>';
+    } else {
+      subjectSelect.disabled = true;
+      blockSelect.disabled = true;
+      blockSelect.innerHTML = '<option value="">-- Select Block --</option>';
+    }
+  });
+
+  subjectSelect.addEventListener('change', async function() {
+    if (subjectSelect.value) {
+      const classId = classSelect.value;
+      const subjectId = subjectSelect.value;
+      // Fetch blocks via API
+      const response = await fetch(`/test-generation/api/blocks?class_id=${classId}&subject_id=${subjectId}`);
+      const blocks = await response.json();
+      blockSelect.disabled = false;
+      blockSelect.innerHTML = '<option value="">-- Select Block --</option>';
+      blocks.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.textContent = b.name;
+        blockSelect.appendChild(opt);
+      });
+    } else {
+      blockSelect.disabled = true;
+      blockSelect.innerHTML = '<option value="">-- Select Block --</option>';
+    }
+  });
+});
+</script>
 {% endblock %}
